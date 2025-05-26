@@ -1,6 +1,6 @@
 package com.kirawii.thunderswufe.data.network;
 
-import com.kirawii.thunderswufe.data.model.ElectricityData;
+import com.kirawii.thunderswufe.data.ElectricityData;
 import io.reactivex.rxjava3.core.Single;
 import retrofit2.http.GET;
 import retrofit2.http.Header;

@@ -6,8 +6,10 @@ import com.kirawii.thunderswufe.data.database.ElectricityRecord;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.tensorflow.lite.Interpreter;
+import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -99,7 +101,15 @@ public class ElectricityPredictor {
     }
 
     private String readAssetFile(String fileName) throws IOException {
-        return context.getAssets().open(fileName).bufferedReader().use(BufferedReader::readText);
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(context.getAssets().open(fileName)))) {
+            StringBuilder content = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line).append("\n");
+            }
+            return content.toString();
+        }
     }
 
     private float scaleUsage(float rawValue) {
@@ -133,7 +143,7 @@ public class ElectricityPredictor {
             Log.w("ElectricityPredictor", "历史数据不足 (需要 " + DEFAULT_INPUT_LENGTH + ", 现有 " + sortedRecords.size() + ")，尝试简单预测。");
             if (sortedRecords.size() >= 2) {
                 double historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords);
-                return simpleLinearPrediction(currentBalance, historicalDailyUsage);
+                return simpleLinearPrediction(currentBalance, historicalDailyUsage, null);
             } else {
                 return new PredictionResult(null, Collections.emptyList(), 0.0f, "历史数据不足以进行任何预测");
             }
@@ -165,7 +175,7 @@ public class ElectricityPredictor {
             case SIMPLE_LINEAR:
                 Log.i("ElectricityPredictor", "Using simple linear prediction as requested.");
                 double historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords);
-                return simpleLinearPrediction(currentBalance, historicalDailyUsage);
+                return simpleLinearPrediction(currentBalance, historicalDailyUsage, null);
             default:
                 throw new IllegalArgumentException("Unknown model type: " + modelTypeToUse);
         }
@@ -173,7 +183,7 @@ public class ElectricityPredictor {
         if (activeInterpreter == null) {
             Log.e("ElectricityPredictor", modelNameForLog + " interpreter is null. Falling back to simple linear prediction.");
             double historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords);
-            return simpleLinearPrediction(currentBalance, historicalDailyUsage);
+            return simpleLinearPrediction(currentBalance, historicalDailyUsage, null);
         }
 
         List<DailyPrediction> dailyPredictions = new ArrayList<>();
@@ -380,41 +390,5 @@ public class ElectricityPredictor {
         LSTM,
         LINEAR_REGRESSION_KERAS,
         SIMPLE_LINEAR
-    }
-
-    public static class PredictionResult {
-        private final Integer daysUntilEmpty;
-        private final List<DailyPrediction> predictions;
-        private final float confidence;
-        private final String error;
-
-        public PredictionResult(Integer daysUntilEmpty, List<DailyPrediction> predictions,
-                              float confidence, String error) {
-            this.daysUntilEmpty = daysUntilEmpty;
-            this.predictions = predictions;
-            this.confidence = confidence;
-            this.error = error;
-        }
-
-        public Integer getDaysUntilEmpty() { return daysUntilEmpty; }
-        public List<DailyPrediction> getPredictions() { return predictions; }
-        public float getConfidence() { return confidence; }
-        public String getError() { return error; }
-    }
-
-    public static class DailyPrediction {
-        private final LocalDateTime date;
-        private final double predictedUsage;
-        private final double remainingBalance;
-
-        public DailyPrediction(LocalDateTime date, double predictedUsage, double remainingBalance) {
-            this.date = date;
-            this.predictedUsage = predictedUsage;
-            this.remainingBalance = remainingBalance;
-        }
-
-        public LocalDateTime getDate() { return date; }
-        public double getPredictedUsage() { return predictedUsage; }
-        public double getRemainingBalance() { return remainingBalance; }
     }
 } 

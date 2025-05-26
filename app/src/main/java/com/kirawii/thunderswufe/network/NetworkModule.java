@@ -86,4 +86,24 @@ public class NetworkModule {
     public static ElectricityService provideElectricityService(Retrofit retrofit) {
         return retrofit.create(ElectricityService.class);
     }
+    
+    public static ElectricityService createElectricityService() {
+        // 创建一个默认的 OkHttpClient
+        OkHttpClient okHttpClient = new OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+                .build();
+                
+        // 创建 Retrofit 实例
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl(BuildConfig.BASE_URL)
+                .client(okHttpClient)
+                .addConverterFactory(GsonConverterFactory.create())
+                .addCallAdapterFactory(RxJava3CallAdapterFactory.create())
+                .build();
+                
+        // 创建并返回 ElectricityService
+        return retrofit.create(ElectricityService.class);
+    }
 } 

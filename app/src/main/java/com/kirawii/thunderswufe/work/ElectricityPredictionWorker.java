@@ -6,9 +6,9 @@ import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 import com.kirawii.thunderswufe.ThunderApplication;
 import com.kirawii.thunderswufe.notification.ElectricityNotificationManager;
+import com.kirawii.thunderswufe.data.database.ElectricityRecord;
 import com.kirawii.thunderswufe.ml.ElectricityPredictor;
 import com.kirawii.thunderswufe.ml.PredictionResult;
-import io.reactivex.rxjava3.core.Single;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -30,20 +30,16 @@ public class ElectricityPredictionWorker extends Worker {
     @Override
     public Result doWork() {
         try {
-            List<ElectricityRecord> records = Single.fromPublisher(
-                    app.getDatabase().electricityDao().getAllRecords()
-            ).blockingGet();
+            List<ElectricityRecord> records = app.getDatabase().electricityDao().getAllRecords().blockingFirst();
 
-            PredictionResult predictionResult = app.getElectricityPredictor()
-                    .predictFutureUsage(records);
+            ElectricityPredictor predictor = new ElectricityPredictor(getApplicationContext());
+            PredictionResult predictionResult = predictor.predictFutureUsage(records, ElectricityPredictor.ModelType.SIMPLE_LINEAR);
 
             if (predictionResult.getError() != null) {
                 return Result.failure();
             }
 
-            boolean notificationEnabled = Single.fromPublisher(
-                    app.getUserPreferencesManager().getNotificationEnabled()
-            ).blockingGet();
+            boolean notificationEnabled = app.getUserPreferencesManager().isNotificationEnabled();
 
             if (!notificationEnabled) {
                 return Result.success();

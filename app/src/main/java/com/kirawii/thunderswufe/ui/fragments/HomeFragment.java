@@ -68,12 +68,8 @@ public class HomeFragment extends Fragment {
         xAxis.setValueFormatter(new ValueFormatter() {
             @Override
             public String getFormattedValue(float value) {
-                int index = (int) value;
-                if (index >= 0 && index < viewModel.getUsageHistory().getValue().size()) {
-                    return viewModel.getUsageHistory().getValue().get(index).getTimestamp()
-                            .format(DATE_FORMATTER);
-                }
-                return "";
+                // 简化处理，仅显示索引
+                return String.valueOf((int) value);
             }
         });
 

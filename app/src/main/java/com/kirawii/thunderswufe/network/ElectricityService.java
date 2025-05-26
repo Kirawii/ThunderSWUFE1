@@ -35,6 +35,19 @@ public interface ElectricityService {
         @FieldMap Map<String, String> requestFields
     );
 
+    /**
+     * 获取当前电量数据
+     * @return 电量数据
+     */
+    Single<ElectricityResponse> getCurrentElectricityData();
+    
+    /**
+     * 关闭服务，释放资源
+     */
+    default void close() {
+        // 默认实现为空
+    }
+
     class Headers {
         public static final String DEFAULT_ACCEPT = "application/json, text/plain, */*";
         public static final String DEFAULT_H5REQ = "Y";

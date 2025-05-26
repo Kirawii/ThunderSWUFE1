@@ -6,7 +6,7 @@ import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
 import com.kirawii.thunderswufe.ThunderApplication;
-import com.kirawii.thunderswufe.data.UserPreferences;
+import com.kirawii.thunderswufe.data.preferences.UserPreferences;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -52,25 +52,15 @@ public class SettingsViewModel extends AndroidViewModel {
 
     public void savePreferences(String roomNo, String buildingNo, String areaNo) {
         ThunderApplication app = (ThunderApplication) getApplication();
-        UserPreferences preferences = new UserPreferences(roomNo, buildingNo, areaNo, "");
         
         isSaving.setValue(true);
         error.setValue(null);
         saved.setValue(false);
 
-        disposables.add(app.getUserPreferencesManager().saveRoomInfo(preferences)
-                .subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                        () -> {
-                            isSaving.setValue(false);
-                            saved.setValue(true);
-                        },
-                        throwable -> {
-                            isSaving.setValue(false);
-                            error.setValue(throwable.getMessage());
-                        }
-                ));
+        app.getUserPreferencesManager().saveRoomInfo(roomNo, buildingNo);
+        
+        isSaving.setValue(false);
+        saved.setValue(true);
     }
 
     @Override

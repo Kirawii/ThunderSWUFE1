@@ -2,6 +2,7 @@ package com.kirawii.thunderswufe.utils;
 
 import com.kirawii.thunderswufe.data.database.ElectricityRecord;
 import com.kirawii.thunderswufe.utils.AnomalyType;
+import com.kirawii.thunderswufe.utils.UsageAnomaly;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -108,35 +109,5 @@ public class ElectricityAnalyzer {
         }
 
         return tips;
-    }
-}
-
-public class UsageAnomaly {
-    private final AnomalyType type;
-    private final LocalDateTime timestamp;
-    private final double value;
-    private final String message;
-
-    public UsageAnomaly(AnomalyType type, LocalDateTime timestamp, double value, String message) {
-        this.type = type;
-        this.timestamp = timestamp;
-        this.value = value;
-        this.message = message;
-    }
-
-    public AnomalyType getType() {
-        return type;
-    }
-
-    public LocalDateTime getTimestamp() {
-        return timestamp;
-    }
-
-    public double getValue() {
-        return value;
-    }
-
-    public String getMessage() {
-        return message;
     }
 } 

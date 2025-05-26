@@ -58,7 +58,6 @@ public class SettingsFragment extends Fragment {
             if (preferences != null) {
                 binding.roomNoEditText.setText(preferences.getRoomNo());
                 binding.buildingNoEditText.setText(preferences.getBuildingNo());
-                binding.areaNoEditText.setText(preferences.getAreaNo());
             }
         });
 

@@ -59,15 +59,6 @@ public class ThunderApplication extends Application implements Configuration.Pro
     private void initializeUserPreferences() {
         userPreferencesManager = new UserPreferencesManager(getApplicationContext());
         Log.d("ThunderApplication", "UserPreferencesManager initialized");
-
-        Log.d("ThunderApplication", "Initializing UserPreferencesManager defaults (blocking)...");
-        try {
-            Single.fromPublisher(userPreferencesManager.initializeDefaultsIfNeeded())
-                    .blockingGet();
-            Log.d("ThunderApplication", "UserPreferencesManager defaults initialization COMPLETED");
-        } catch (Exception e) {
-            Log.e("ThunderApplication", "Error initializing UserPreferencesManager defaults", e);
-        }
     }
 
     private void initializeNetwork() {
