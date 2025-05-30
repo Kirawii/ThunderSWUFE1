@@ -11,20 +11,26 @@ import androidx.compose.ui.unit.dp
 import com.kirawii.thunderswufe.ui.viewmodels.SettingsUiState // 导入 ViewModel 和 UiState
 import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle // 推荐
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel, // 接收 ViewModel
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+    onImportDone: (() -> Unit)? = null // 导入后回调
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle() // 观察 UiState
+    val uiState = viewModel.uiState.value // 直接取 State 对象的 value
 
     // 用于本地编辑的临时状态，当用户完成编辑后，通过 ViewModel 更新 DataStore
-    var localThreshold by remember(uiState.threshold) { mutableStateOf(uiState.threshold) }
-    var localRoomNo by remember(uiState.roomNo) { mutableStateOf(uiState.roomNo) }
-    var localBuildingNo by remember(uiState.buildingNo) { mutableStateOf(uiState.buildingNo) }
-    var localAreaNo by remember(uiState.areaNo) { mutableStateOf(uiState.areaNo) }
-    // notificationEnabled 可以直接从 uiState.notificationEnabled 读取，并通过 viewModel.updateNotificationEnabled 更新
+    var localThreshold by remember { mutableStateOf(uiState.threshold) }
+    var localRoomNo by remember { mutableStateOf(uiState.roomNo) }
+    var localBuildingNo by remember { mutableStateOf(uiState.buildingNo) }
+    var localAreaNo by remember { mutableStateOf(uiState.areaNo) }
+    // notificationEnabled 直接用 uiState.notificationEnabled
 
     Column(
         modifier = modifier
@@ -32,10 +38,23 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "设置",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        // 顶部带返回按钮的栏
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (onBack != null) {
+                IconButton(onClick = { onBack() }) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "设置",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
+        }
 
         OutlinedTextField(
             value = localThreshold,
@@ -92,5 +111,24 @@ fun SettingsScreen(
         ) {
             Text("保存设置")
         }
+        Spacer(modifier = Modifier.height(32.dp))
+        Divider()
+        Spacer(modifier = Modifier.height(16.dp))
+        // 导入历史CSV数据
+        val context = LocalContext.current
+        var showImportResult by remember { mutableStateOf("") }
+        val scope = rememberCoroutineScope()
+        Text(text = "实验功能：导入历史CSV数据", style = MaterialTheme.typography.titleMedium)
+        Button(onClick = {
+            scope.launch {
+                showImportResult = "正在导入..."
+                showImportResult = importCsvAndInsertDb(context)
+                onImportDone?.invoke() // 导入后回调，主界面可自动刷新
+            }
+        }) {
+            Text("导入 assets/balance_data_副本.csv")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(showImportResult)
     }
 }

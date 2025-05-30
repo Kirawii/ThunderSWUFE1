@@ -41,10 +41,8 @@ class MainActivity : ComponentActivity() {
 
         checkNotificationPermission()
 
-        lifecycleScope.launch {
-            val roomInfo = app.userPreferencesManager.roomInfo.first()
-            if (roomInfo.roomNo.isEmpty()) {
-            }
+        val roomInfo = app.userPreferencesManager.getRoomInfo()
+        if (roomInfo.roomNo.isEmpty()) {
         }
         
         enableEdgeToEdge()
@@ -63,12 +61,8 @@ class MainActivity : ComponentActivity() {
     
     private fun checkNotificationPermission() {
         notificationPermissionManager.checkAndRequestPermission(
-            onGranted = {
-                startBackgroundServices()
-            },
-            onDenied = {
-                showPermissionDeniedMessage()
-            }
+            Runnable { startBackgroundServices() },
+            Runnable { showPermissionDeniedMessage() }
         )
     }
     

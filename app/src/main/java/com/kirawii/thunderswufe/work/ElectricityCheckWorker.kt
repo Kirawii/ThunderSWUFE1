@@ -6,6 +6,7 @@ import androidx.work.*
 import com.kirawii.thunderswufe.ThunderApplication
 import com.kirawii.thunderswufe.data.database.ElectricityDatabase
 import com.kirawii.thunderswufe.data.database.ElectricityRecord
+import com.kirawii.thunderswufe.network.ElectricityResponse
 import com.kirawii.thunderswufe.network.ElectricityService
 import com.kirawii.thunderswufe.network.NetworkModule
 import com.kirawii.thunderswufe.notification.ElectricityNotificationManager
@@ -14,6 +15,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import java.time.Duration
 import java.time.LocalDateTime
+import kotlinx.coroutines.suspendCancellableCoroutine
+import retrofit2.Response
+import kotlin.coroutines.resumeWithException
 
 class ElectricityCheckWorker(
     private val context: Context,
@@ -63,24 +67,34 @@ class ElectricityCheckWorker(
     override suspend fun doWork(): Result = coroutineScope {
         try {
             // 获取配置信息
-            val threshold = preferencesManager.lowBalanceThreshold.first()
-            val roomInfo = preferencesManager.roomInfo.first()
+            val threshold = preferencesManager.getLowBalanceThreshold()
+            val roomInfo = preferencesManager.getRoomInfo()
             Log.d("ElectricityCheckWorker", "RoomInfo from Prefs: Area='${roomInfo.areaNo}', Building='${roomInfo.buildingNo}', Room='${roomInfo.roomNo}'")
-            val authToken = preferencesManager.authToken.first()
+            val authToken = preferencesManager.getAuthToken()
             Log.d("ElectricityCheckWorker", "Auth Token from Prefs: '$authToken'")
-            val notificationEnabled = preferencesManager.notificationEnabled.first()
+            val notificationEnabled = preferencesManager.isNotificationEnabled()
             
             var balance = 0.0
             var isOffline = false
             
             try {
-                // 尝试从网络获取数据
-                val response = electricityService.getElectricityInfo(
-                    authorizationToken = authToken,
-                    userAgent = "Mozilla/5.0 (Linux; Android 15; V2241HA Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/135.0.7049.111 Mobile Safari/537.36 ZJYXYwebviewbroswer ZJYXYAndroid tourCustomer/yunmaapp.NET/7.1.5/ym-30a974936ba5e48e03b0775175a54a30",
-                    origin = com.kirawii.thunderswufe.BuildConfig.BASE_URL,
-                    referer = com.kirawii.thunderswufe.BuildConfig.BASE_URL + "easytong_webapp/",
-                    requestFields = mapOf(
+                // Retrofit Java Call
+                val call = electricityService.getElectricityInfo(
+                    authToken,
+                    "Mozilla/5.0 (Linux; Android 15; V2241HA Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/135.0.7049.111 Mobile Safari/537.36 ZJYXYwebviewbroswer ZJYXYAndroid tourCustomer/yunmaapp.NET/7.1.5/ym-30a974936ba5e48e03b0775175a54a30",
+                    "application/json, text/plain, */*",
+                    com.kirawii.thunderswufe.BuildConfig.BASE_URL,
+                    com.kirawii.thunderswufe.BuildConfig.BASE_URL + "easytong_webapp/",
+                    "Y",
+                    "\"Android\"",
+                    "\"Android WebView\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\"",
+                    "?1",
+                    "cn.com.yunma.school.app",
+                    "same-origin",
+                    "cors",
+                    "empty",
+                    "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+                    mapOf(
                         "RoomNo" to roomInfo.roomNo,
                         "BuildingNo" to roomInfo.buildingNo,
                         "AreaNo" to roomInfo.areaNo,
@@ -92,6 +106,14 @@ class ElectricityCheckWorker(
                         "ContentType" to "application/json"
                     )
                 )
+                val response = suspendCancellableCoroutine<Response<ElectricityResponse>> { cont ->
+                    try {
+                        val resp = call.execute()
+                        cont.resume(resp) {}
+                    } catch (e: Exception) {
+                        cont.resumeWithException(e)
+                    }
+                }
 
                 // + Detailed Response Logging
                 Log.d("ElectricityCheckWorker", "Response received:")
@@ -103,7 +125,7 @@ class ElectricityCheckWorker(
                 if (response.isSuccessful) {
                     val responseBody = response.body()
                     Log.d("ElectricityCheckWorker", "  Response Body (Success): $responseBody")
-                    balance = responseBody?.balance?.toDoubleOrNull() ?: 0.0
+                    balance = responseBody?.getBalance()?.toDoubleOrNull() ?: 0.0
                     Log.i("ElectricityCheckWorker", "API call successful. Balance: $balance")
 
                     val lastRecord = database.electricityDao().getLatestRecordByRoom(roomInfo.roomNo)
@@ -117,12 +139,7 @@ class ElectricityCheckWorker(
                     val changeToStore = if (calculatedChange > 0) calculatedChange else 0.0
 
                     database.electricityDao().insertRecord(
-                        ElectricityRecord(
-                            timestamp = LocalDateTime.now(),
-                            balance = balance,
-                            change = changeToStore, 
-                            roomNo = roomInfo.roomNo
-                        )
+                        ElectricityRecord(0L, LocalDateTime.now(), balance, changeToStore, roomInfo.roomNo)
                     )
                 } else {
                     val errorBodyString = response.errorBody()?.string() // Read error body once

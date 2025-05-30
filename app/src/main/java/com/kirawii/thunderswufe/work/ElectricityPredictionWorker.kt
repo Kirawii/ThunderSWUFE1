@@ -31,7 +31,7 @@ class ElectricityPredictionWorker(
                 return@withContext Result.failure()
             }
 
-            val notificationEnabled = app.userPreferencesManager.notificationEnabled.first()
+            val notificationEnabled = app.userPreferencesManager.isNotificationEnabled()
             if (!notificationEnabled) {
                 return@withContext Result.success()
             }
@@ -42,9 +42,9 @@ class ElectricityPredictionWorker(
                     val emptyDate = LocalDateTime.now().plusDays(days.toLong()).format(formatter)
                     
                     notificationManager.showPredictionNotification(
-                        daysUntilEmpty = days,
-                        emptyDate = emptyDate,
-                        confidence = predictionResult.confidence
+                        days,
+                        emptyDate,
+                        predictionResult.confidence
                     )
                 }
             }

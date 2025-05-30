@@ -64,7 +64,10 @@ fun NavGraph(
             // 如果使用 Hilt (需要添加 'androidx.hilt:hilt-navigation-compose' 依赖)
             // val settingsViewModel: SettingsViewModel = hiltViewModel()
 
-            SettingsScreen(viewModel = settingsViewModel)
+            SettingsScreen(
+    viewModel = settingsViewModel,
+    onBack = { navController.popBackStack() }
+)
         }
 
         composable(Screen.UsageAnalysis.route) {

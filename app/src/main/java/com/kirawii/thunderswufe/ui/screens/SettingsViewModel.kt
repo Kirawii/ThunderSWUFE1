@@ -1,18 +1,13 @@
 package com.kirawii.thunderswufe.ui.viewmodels
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.kirawii.thunderswufe.ThunderApplication
 import com.kirawii.thunderswufe.data.preferences.RoomInfo
 import com.kirawii.thunderswufe.data.preferences.UserPreferencesManager
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 data class SettingsUiState(
     val threshold: String = "10.0",
     val roomNo: String = "",
@@ -25,58 +20,57 @@ class SettingsViewModel(
     private val userPreferencesManager: UserPreferencesManager
 ) : ViewModel() {
 
-    val uiState: StateFlow<SettingsUiState> =
-        userPreferencesManager.lowBalanceThreshold
-            .combine(userPreferencesManager.roomInfo) { threshold, roomInfo -> threshold to roomInfo }
-            .combine(userPreferencesManager.notificationEnabled) { pair, notifEnabled -> Triple(pair.first, pair.second, notifEnabled) }
-            .map { (threshold, roomInfo, notifEnabled) ->
-                SettingsUiState(
-                    threshold = threshold.toString(),
-                    roomNo = roomInfo.roomNo,
-                    buildingNo = roomInfo.buildingNo,
-                    areaNo = roomInfo.areaNo,
-                    notificationEnabled = notifEnabled
-                )
-            }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = SettingsUiState() // 初始状态
-            )
+    private val _uiState = mutableStateOf(SettingsUiState())
+    val uiState: State<SettingsUiState> get() = _uiState
+
+    init {
+        refreshUiState()
+    }
+
+    fun refreshUiState() {
+        val threshold = userPreferencesManager.getLowBalanceThreshold()
+        val roomInfo = userPreferencesManager.getRoomInfo()
+        val notificationEnabled = userPreferencesManager.isNotificationEnabled()
+        _uiState.value = SettingsUiState(
+            threshold = threshold.toString(),
+            roomNo = roomInfo.roomNo,
+            buildingNo = roomInfo.buildingNo,
+            areaNo = roomInfo.areaNo,
+            notificationEnabled = notificationEnabled
+        )
+    }
 
     fun updateThreshold(newThreshold: String) {
-        viewModelScope.launch {
-            userPreferencesManager.updateLowBalanceThreshold(newThreshold.toDoubleOrNull() ?: 10.0)
-        }
+        userPreferencesManager.setLowBalanceThreshold(newThreshold.toDoubleOrNull() ?: 10.0)
+        refreshUiState()
     }
 
     fun updateRoomNo(newRoomNo: String) {
-        viewModelScope.launch {
-            val currentInfo = userPreferencesManager.roomInfo.first() // 获取当前值
-            userPreferencesManager.updateRoomInfo(currentInfo.copy(roomNo = newRoomNo))
-        }
+        val currentInfo = userPreferencesManager.getRoomInfo()
+        currentInfo.roomNo = newRoomNo
+        userPreferencesManager.setRoomInfo(currentInfo)
+        refreshUiState()
     }
     // ... 类似地为 buildingNo, areaNo 创建更新函数 ...
 
     fun updateBuildingNo(newBuildingNo: String) {
-        viewModelScope.launch {
-            val currentInfo = userPreferencesManager.roomInfo.first()
-            userPreferencesManager.updateRoomInfo(currentInfo.copy(buildingNo = newBuildingNo))
-        }
+        val currentInfo = userPreferencesManager.getRoomInfo()
+        currentInfo.buildingNo = newBuildingNo
+        userPreferencesManager.setRoomInfo(currentInfo)
+        refreshUiState()
     }
 
     fun updateAreaNo(newAreaNo: String) {
-        viewModelScope.launch {
-            val currentInfo = userPreferencesManager.roomInfo.first()
-            userPreferencesManager.updateRoomInfo(currentInfo.copy(areaNo = newAreaNo))
-        }
+        val currentInfo = userPreferencesManager.getRoomInfo()
+        currentInfo.areaNo = newAreaNo
+        userPreferencesManager.setRoomInfo(currentInfo)
+        refreshUiState()
     }
 
 
     fun updateNotificationEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            userPreferencesManager.updateNotificationEnabled(enabled)
-        }
+        userPreferencesManager.setNotificationEnabled(enabled)
+        refreshUiState()
     }
 
     fun saveAllSettings(
@@ -84,19 +78,12 @@ class SettingsViewModel(
         roomNo: String,
         buildingNo: String,
         areaNo: String
-        // notificationEnabled 通过其 Switch 的 onCheckedChange 直接更新了
     ) {
-        viewModelScope.launch {
-            userPreferencesManager.updateLowBalanceThreshold(threshold.toDoubleOrNull() ?: 10.0)
-            userPreferencesManager.updateRoomInfo(
-                RoomInfo(
-                    roomNo = roomNo,
-                    buildingNo = buildingNo,
-                    areaNo = areaNo
-                )
-            )
-            // 如果 notificationEnabled 也想在点击保存时才更新，则在此处更新
-        }
+        userPreferencesManager.setLowBalanceThreshold(threshold.toDoubleOrNull() ?: 10.0)
+        userPreferencesManager.setRoomInfo(
+            RoomInfo(roomNo, buildingNo, areaNo)
+        )
+        refreshUiState()
     }
 }
 

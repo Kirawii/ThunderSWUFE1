@@ -1,4 +1,23 @@
 <resources>
     <string name="app_name">ThunderSWUFE</string>
 
+    <!-- 首页UI相关 -->
+    <string name="remaining_electricity">剩余电量</string>
+    <string name="prediction_days">预计可用 %1$d 天</string>
+    <string name="last_update">上次更新：%1$s</string>
+    <string name="refresh">刷新</string>
+    <string name="refreshing">刷新中...</string>
+    <string name="recent_trend">近期用电趋势</string>
+    <string name="no_data">暂无数据</string>
+    <string name="analysis">查看详细分析</string>
+
+    <!-- 通知相关 -->
+    <string name="low_balance_title">⚡ 电量不足提醒</string>
+    <string name="low_balance_content">当前剩余电量: %1$.2f度，低于设定阈值%2$.2f度</string>
+    <string name="prediction_title">⚠️ 电量预警</string>
+    <string name="prediction_content">预计将在 %1$d 天后（%2$s）电量耗尽</string>
+    <string name="prediction_bigtext">预计将在 %1$d 天后（%2$s）电量耗尽
+预测准确度：%3$d%%
+建议及时充值以避免断电</string>
+
 </resources>
