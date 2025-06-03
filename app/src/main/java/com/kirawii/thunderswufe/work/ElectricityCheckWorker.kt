@@ -78,7 +78,6 @@ class ElectricityCheckWorker(
             var isOffline = false
             
             try {
-                // Retrofit Java Call
                 val call = electricityService.getElectricityInfo(
                     authToken,
                     "Mozilla/5.0 (Linux; Android 15; V2241HA Build/AP3A.240905.015.A2; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/135.0.7049.111 Mobile Safari/537.36 ZJYXYwebviewbroswer ZJYXYAndroid tourCustomer/yunmaapp.NET/7.1.5/ym-30a974936ba5e48e03b0775175a54a30",
@@ -114,8 +113,6 @@ class ElectricityCheckWorker(
                         cont.resumeWithException(e)
                     }
                 }
-
-                // + Detailed Response Logging
                 Log.d("ElectricityCheckWorker", "Response received:")
                 Log.d("ElectricityCheckWorker", "  Successful: ${response.isSuccessful}")
                 Log.d("ElectricityCheckWorker", "  Code: ${response.code()}")

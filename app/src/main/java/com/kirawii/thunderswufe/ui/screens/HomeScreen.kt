@@ -2,7 +2,8 @@ package com.kirawii.thunderswufe.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
@@ -17,14 +18,11 @@ import com.patrykandpatrick.vico.compose.axis.horizontal.bottomAxis
 import com.patrykandpatrick.vico.compose.axis.vertical.startAxis
 import com.patrykandpatrick.vico.compose.chart.Chart
 import com.patrykandpatrick.vico.compose.chart.line.lineChart
-import com.patrykandpatrick.vico.core.entry.entryModelOf // 确保这个导入存在
-// 如果使用 FloatEntry 等特定 Entry 类型，也需要导入，例如：
-// import com.patrykandpatrick.vico.core.entry.FloatEntry
+import com.patrykandpatrick.vico.core.entry.entryModelOf
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// 建议将 DateTimeFormatter 定义为常量以避免重复创建
 private val HOME_SCREEN_DATE_FORMATTER = DateTimeFormatter.ofPattern("MM-dd HH:mm")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,24 +39,23 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("智能用电") }, // 建议使用 stringResource
+                title = { Text("智能用电") },
                 actions = {
                     IconButton(onClick = onSettingsClick) {
-                        Icon(Icons.Default.Settings, contentDescription = "设置") // contentDescription 建议使用 stringResource
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 }
             )
         },
         modifier = modifier
-    ) { paddingValues -> // Renamed 'padding' to 'paddingValues' to avoid clash if you use Modifier.padding(padding)
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues) // 使用 Scaffold 提供的 paddingValues
-                .padding(16.dp), // 额外的内边距
+                .padding(paddingValues)
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 电量卡片
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -93,14 +90,19 @@ fun HomeScreen(
                             style = MaterialTheme.typography.headlineLarge
                         )
                     }
-                    // 预测信息
-                    // TODO: 可用 ViewModel 字段 predictedDays 替换 0
+val predictedDays by homeViewModel.predictedDays.collectAsState()
+val predictionError by homeViewModel.predictionError.collectAsState()
+val isPredicting by homeViewModel.isPredicting.collectAsState()
 Text(
-    text = stringResource(id = R.string.prediction_days, 0),
-    color = MaterialTheme.colorScheme.onSurface,
+    text = when {
+        isPredicting -> "预计可用天数：预测中..."
+        predictionError != null -> "预计可用天数：${predictionError}"
+        predictedDays != null -> stringResource(id = R.string.prediction_days, predictedDays ?: 0)
+        else -> "预计可用天数：-"
+    },
+    color = if (predictionError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
     style = MaterialTheme.typography.bodyLarge
 )
-                    // 上次更新时间
                     records.firstOrNull()?.timestamp?.let { ts ->
                         Text(
                             text = stringResource(id = R.string.last_update, ts.format(HOME_SCREEN_DATE_FORMATTER)),
@@ -116,113 +118,144 @@ Text(
                     }
                 }
             }
-
-            // 用电趋势图（优化版：支持横坐标粒度和曲线类型切换，动态Y轴）
-Card(
-    modifier = Modifier
-        .fillMaxWidth()
-        .weight(1f),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    elevation = CardDefaults.cardElevation(4.dp)
-) {
-    Column(
-        modifier = Modifier.padding(16.dp)
-    ) {
-        Text(
-            text = stringResource(id = R.string.recent_trend),
-            style = MaterialTheme.typography.titleMedium
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 1. 横坐标粒度和曲线类型选择
-        var chartMode by remember { mutableStateOf("日") }
-        val chartModes = listOf("日", "月", "小时")
-        var valueType by remember { mutableStateOf("余额") }
-        val valueTypes = listOf("余额", "用电量")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            chartModes.forEach { mode ->
-                Button(
-                    onClick = { chartMode = mode },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (chartMode == mode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-                    ),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.height(32.dp)
-                ) { Text(mode) }
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            valueTypes.forEach { type ->
-                Button(
-                    onClick = { valueType = type },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (valueType == type) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-                    ),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.height(32.dp)
-                ) { Text(type) }
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (records.isNotEmpty()) {
-            // 2. 分组聚合
-            val grouped = when (chartMode) {
-                "月" -> records.groupBy { it.timestamp.withDayOfMonth(1).toLocalDate() }
-                "小时" -> records.groupBy { it.timestamp.truncatedTo(java.time.temporal.ChronoUnit.HOURS) }
-                else -> records.groupBy { it.timestamp.toLocalDate() }
-            }
-            val sortedGroups = grouped.toSortedMap(compareBy { it })
-            val chartData = when (valueType) {
-                "用电量" -> sortedGroups.values.map { group -> group.sumOf { it.change } }
-                else -> sortedGroups.values.map { group -> group.last().balance }
-            }
-            val labels = sortedGroups.keys.map { date ->
-                when (chartMode) {
-                    "月" -> if (date is java.time.LocalDate) date.format(DateTimeFormatter.ofPattern("yyyy-MM")) else ""
-                    "小时" -> if (date is java.time.LocalDateTime) date.format(DateTimeFormatter.ofPattern("MM-dd HH")) else ""
-                    else -> if (date is java.time.LocalDate) date.format(DateTimeFormatter.ofPattern("MM-dd")) else ""
-                }
-            }
-            // 3. 动态Y轴范围
-            val minY = chartData.minOrNull() ?: 0.0
-            val maxY = chartData.maxOrNull() ?: 0.0
-            Chart(
-                chart = lineChart(),
-                model = entryModelOf(*chartData.toTypedArray()),
-                startAxis = startAxis(),
-                bottomAxis = bottomAxis(
-                    valueFormatter = { x, _ ->
-                        val idx = x.toInt().coerceIn(0, labels.lastIndex)
-                        labels.getOrElse(idx) { "" }
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = stringResource(id = R.string.recent_trend),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    var chartMode by remember { mutableStateOf("日") }
+                    val chartModes = listOf("日", "月", "小时")
+                    var valueType by remember { mutableStateOf("余额") }
+                    val valueTypes = listOf("余额", "用电量")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        chartModes.forEach { mode ->
+                            Button(
+                                onClick = { chartMode = mode },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (chartMode == mode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                                ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) { Text(mode) }
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        valueTypes.forEach { type ->
+                            Button(
+                                onClick = { valueType = type },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (valueType == type) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                                ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) { Text(type) }
+                        }
                     }
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(stringResource(id = R.string.no_data))
-            }
-        }
-    }
-}
-
-
-            // 分析按钮
-            Button(
-                onClick = onAnalysisClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-            ) {
-                Text(stringResource(id = R.string.analysis), style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    ) {
+                        if (records.isNotEmpty()) {
+                            val grouped = when (chartMode) {
+                                "月" -> records.groupBy { it.timestamp.withDayOfMonth(1).toLocalDate() }
+                                "小时" -> records.groupBy { it.timestamp.truncatedTo(java.time.temporal.ChronoUnit.HOURS) }
+                                else -> records.groupBy { it.timestamp.toLocalDate() }
+                            }
+                            val sortedGroups = grouped.toSortedMap(compareBy { it })
+                            val chartData = when (valueType) {
+                                "用电量" -> sortedGroups.values.map { group -> group.sumOf { it.change } }
+                                else -> sortedGroups.values.map { group -> group.last().balance }
+                            }
+                            val labels = sortedGroups.keys.map { date ->
+                                when (chartMode) {
+                                    "月" -> if (date is java.time.LocalDate) date.format(DateTimeFormatter.ofPattern("yyyy-MM")) else ""
+                                    "小时" -> if (date is java.time.LocalDateTime) date.format(DateTimeFormatter.ofPattern("MM-dd HH")) else ""
+                                    else -> if (date is java.time.LocalDate) date.format(DateTimeFormatter.ofPattern("MM-dd")) else ""
+                                }
+                            }
+                            val minY = chartData.minOrNull() ?: 0.0
+                            val maxY = chartData.maxOrNull() ?: 0.0
+                            Chart(
+                                chart = lineChart(),
+                                model = entryModelOf(*chartData.toTypedArray()),
+                                startAxis = startAxis(),
+                                bottomAxis = bottomAxis(
+                                    valueFormatter = { x, _ ->
+                                        val idx = x.toInt().coerceIn(0, labels.lastIndex)
+                                        labels.getOrElse(idx) { "" }
+                                    }
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(stringResource(id = R.string.no_data))
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = onAnalysisClick,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                    ) {
+                        Text(stringResource(id = R.string.analysis), style = MaterialTheme.typography.titleMedium)
+                    }
+                    // 节能建议区块
+                    val tips = listOf(
+                        "高峰时段尽量减少大功率电器使用，节约用电。",
+                        "及时关闭不用的电器，防止待机耗电。",
+                        "合理设置空调温度，建议不低于26℃。",
+                        "充分利用自然光，减少照明用电。",
+                        "定期清理电器灰尘，提高能效。",
+                        "合理安排用电时间，避开用电高峰。"
+                    )
+                    val tip = remember { tips.random() }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                        elevation = CardDefaults.cardElevation(2.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "节能建议",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = tip,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
             }
         }
     }

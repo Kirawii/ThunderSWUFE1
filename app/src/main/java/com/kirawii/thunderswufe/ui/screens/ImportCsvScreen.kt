@@ -61,7 +61,7 @@ fun parseRecordsFromCsv(inputStream: InputStream): List<ElectricityRecord> {
     val reader = inputStream.bufferedReader()
     val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     val records = mutableListOf<ElectricityRecord>()
-    reader.readLine() // 跳过表头
+    reader.readLine()
     reader.forEachLine { line ->
         val parts = line.split(",")
         if (parts.size >= 3) {

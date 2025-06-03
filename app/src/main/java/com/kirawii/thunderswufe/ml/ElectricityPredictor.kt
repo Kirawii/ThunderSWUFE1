@@ -1,9 +1,9 @@
-package com.kirawii.thunderswufe.ml // 确保包名正确
+package com.kirawii.thunderswufe.ml
 
 import android.content.Context
 import android.util.Log
-import com.kirawii.thunderswufe.data.database.ElectricityRecord // 假设路径
-import org.json.JSONObject // 用于解析JSON
+import com.kirawii.thunderswufe.data.database.ElectricityRecord
+import org.json.JSONObject
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.io.IOException
@@ -17,7 +17,7 @@ import kotlin.math.max
 enum class ModelType {
     LSTM,
     LINEAR_REGRESSION_KERAS,
-    SIMPLE_LINEAR // 代表简单回退预测
+    SIMPLE_LINEAR
 }
 
 class ElectricityPredictor(private val context: Context) {
@@ -29,19 +29,15 @@ class ElectricityPredictor(private val context: Context) {
         private const val LSTM_MODEL_FILE = "lstm_model.tflite"
         private const val LR_KERAS_MODEL_FILE = "linear_regression_keras.tflite"
         private const val SCALER_PARAMS_FILE = "scaler_params.json"
-        private const val DEFAULT_INPUT_LENGTH = 7 // 与Python训练时一致
-        // outputLength 对于单步预测模型通常是1，然后滚动预测
-        // 如果你的TFLite模型设计为一次输出多天，这里才需要大于1
-        // 假设你的模型是单步预测（预测下一天）
-        private const val MODEL_OUTPUT_STEPS = 1 // LSTM 和 LR Keras 都是预测未来1天
-        private const val PREDICTION_HORIZON_DAYS = 3 // 我们希望最终展示未来多少天的预测
+        private const val DEFAULT_INPUT_LENGTH = 7
+        private const val MODEL_OUTPUT_STEPS = 1
+        private const val PREDICTION_HORIZON_DAYS = 3
     }
 
-    // Scaler 参数
     private var scalerScale: FloatArray? = null
     private var scalerMin: FloatArray? = null
 
-    private val floatComparisonThreshold = 1e-6f // 使用 Float
+    private val floatComparisonThreshold = 1e-6f
 
     init {
         loadAllModelsAndParams()
@@ -100,18 +96,15 @@ class ElectricityPredictor(private val context: Context) {
 
         } catch (e: Exception) {
             Log.e("ElectricityPredictor", "Error loading scaler params '$fileName': ${e.message}", e)
-            scalerScale = null //确保在失败时它们是null
+            scalerScale = null
             scalerMin = null
         }
     }
-
-    // --- 归一化和反归一化 ---
     private fun scaleUsage(rawValue: Float): Float {
         if (scalerScale == null || scalerMin == null || scalerScale!!.isEmpty()) {
             Log.w("ElectricityPredictor", "Scaler not initialized, returning raw value for scaling.")
             return rawValue
         }
-        // X_scaled = X * scale_ + min_
         return rawValue * scalerScale!![0] + scalerMin!![0]
     }
 
@@ -120,20 +113,19 @@ class ElectricityPredictor(private val context: Context) {
             Log.w("ElectricityPredictor", "Scaler not initialized or scale is zero, returning scaled value for inverse scaling.")
             return scaledValue
         }
-        // X = (X_scaled - min_) / scale_
         return (scaledValue - scalerMin!![0]) / scalerScale!![0]
     }
 
 
     fun predictFutureUsage(
         records: List<ElectricityRecord>,
-        modelTypeToUse: ModelType = ModelType.LSTM // 默认使用 LSTM
+        modelTypeToUse: ModelType = ModelType.LSTM
     ): PredictionResult {
         if (records.isEmpty()) {
             return PredictionResult(null, emptyList(), 0.0f, "没有历史数据")
         }
 
-        val sortedRecords = records.sortedBy { it.timestamp } // 最旧的在前
+        val sortedRecords = records.sortedBy { it.timestamp }
         val currentBalance = sortedRecords.last().balance
 
         if (sortedRecords.size < DEFAULT_INPUT_LENGTH) {
@@ -146,21 +138,16 @@ class ElectricityPredictor(private val context: Context) {
             }
         }
 
-        // 准备滚动预测的初始序列 (取最新的 `DEFAULT_INPUT_LENGTH` 条记录的用电量，并归一化)
-        // 假设 ElectricityRecord.change 是每日原始正消耗量
         val initialRawHistory = sortedRecords
             .takeLast(DEFAULT_INPUT_LENGTH)
             .map { it.change.toFloat() }
 
         if (initialRawHistory.size < DEFAULT_INPUT_LENGTH) {
-            // This should not happen if sortedRecords.size >= DEFAULT_INPUT_LENGTH check passed
             Log.e("ElectricityPredictor", "Logic error: Not enough data for initial history after filtering.")
             return PredictionResult(null, emptyList(), 0.0f, "内部错误：准备历史数据失败")
         }
         val initialScaledHistory = initialRawHistory.map { scaleUsage(it) }.toMutableList()
 
-
-        // 选择模型进行预测
         val activeInterpreter: Interpreter?
         val modelNameForLog: String
         when (modelTypeToUse) {
@@ -190,15 +177,14 @@ class ElectricityPredictor(private val context: Context) {
             return simpleLinearPrediction(currentBalance, historicalDailyUsage)
         }
 
-
-        // --- 执行滚动预测 ---
         val dailyPredictions = mutableListOf<DailyPrediction>()
         var tempRemainingBalance = currentBalance
         val today = LocalDateTime.now()
         var currentScaledHistory = initialScaledHistory.toMutableList() // 可变副本
 
         try {
-            for (dayOffset in 0 until PREDICTION_HORIZON_DAYS) { // 预测未来 PREDICTION_HORIZON_DAYS 天
+            var dayOffset = 0
+while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 最多预测一年，防止死循环
                 if (currentScaledHistory.size < DEFAULT_INPUT_LENGTH) {
                     Log.e("ElectricityPredictor", "History size became less than $DEFAULT_INPUT_LENGTH during prediction loop.")
                     break // Should not happen
@@ -208,13 +194,6 @@ class ElectricityPredictor(private val context: Context) {
                     .order(ByteOrder.nativeOrder())
                 currentScaledHistory.forEach { inputBuffer.putFloat(it) }
                 inputBuffer.rewind()
-
-                // LSTM 输入形状是 [1, DEFAULT_INPUT_LENGTH, 1]
-                // Keras LR TFLite 输入形状是 [1, DEFAULT_INPUT_LENGTH]
-                // ByteBuffer 的内容是一样的，但 TFLite Interpreter 的配置会处理形状。
-                // 这里假设两个模型 TFLite 转换时，其签名能接受扁平化的 [DEFAULT_INPUT_LENGTH] 序列输入
-                // (TFLite converter often flattens the batch dim if it's 1 for single sample inference)
-                // 如果 LSTM 需要 [1, seq, 1] 严格输入，这里 inputBuffer 的填充需要调整，或者模型转换时指定固定batch=1.
 
                 val outputBuffer = ByteBuffer.allocateDirect(MODEL_OUTPUT_STEPS * Float.SIZE_BYTES)
                     .order(ByteOrder.nativeOrder())
@@ -233,31 +212,17 @@ class ElectricityPredictor(private val context: Context) {
                         remainingBalance = tempRemainingBalance
                     )
                 )
-
-                // 更新历史序列以进行下一次迭代
                 if (currentScaledHistory.isNotEmpty()) {
                     currentScaledHistory.removeAt(0)
                 }
                 currentScaledHistory.add(predictedScaledUsage)
 
                 if (tempRemainingBalance <= floatComparisonThreshold) {
-                    // 如果余额已耗尽（或接近耗尽），提前结束预测更多天
-                    tempRemainingBalance = 0.0 // 确保为0
-                    // 如果需要，填充剩余的预测天数为0用量
-                    for (remainingDayOffset in (dayOffset + 1) until PREDICTION_HORIZON_DAYS) {
-                        dailyPredictions.add(
-                            DailyPrediction(
-                                date = today.plusDays(remainingDayOffset.toLong() + 1),
-                                predictedUsage = 0.0,
-                                remainingBalance = 0.0
-                            )
-                        )
-                    }
-                    break
-                }
+    tempRemainingBalance = 0.0 // 确保为0
+    break
+}
             }
 
-            // 计算预计耗尽天数 (基于滚动预测的结果)
             val historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords) // 用于置信度和可能的耗尽估算
             var daysUntilEmptyByModel: Int? = null
             var balanceForDaysCalc = currentBalance
@@ -313,7 +278,7 @@ class ElectricityPredictor(private val context: Context) {
             records.sortedBy { it.timestamp }
         } else { records }
 
-        val totalNetUsage = sortedForCalc.map { it.change }.sum().toDouble() // 假设 change 是每日正消耗
+        val totalNetUsage = sortedForCalc.map { it.change }.sum().toDouble()
         val firstTimestamp = sortedForCalc.first().timestamp
         val lastTimestamp = sortedForCalc.last().timestamp
         val daysBetween = ChronoUnit.DAYS.between(firstTimestamp, lastTimestamp).toDouble()
@@ -321,7 +286,7 @@ class ElectricityPredictor(private val context: Context) {
         return if (daysBetween > 0 && totalNetUsage > 0) {
             totalNetUsage / daysBetween
         } else if (sortedForCalc.size == 1 && sortedForCalc.first().change > 0) {
-            sortedForCalc.first().change.toDouble() // 只有一天记录，用当天的
+            sortedForCalc.first().change.toDouble()
         }
         else { 0.0 }
     }
@@ -366,7 +331,6 @@ class ElectricityPredictor(private val context: Context) {
     }
 
     private fun calculateConfidence(modelPredictions: List<DailyPrediction>, historicalDailyUsage: Double): Float {
-        // ... (置信度计算逻辑基本不变) ...
         if (modelPredictions.isEmpty()) return 0.0f
         val avgModelPredictedUsage = modelPredictions.map { it.predictedUsage }.average()
         if (historicalDailyUsage <= floatComparisonThreshold) {
@@ -386,7 +350,6 @@ class ElectricityPredictor(private val context: Context) {
     }
 }
 
-// --- 数据类 (保持不变) ---
 data class PredictionResult(
     val daysUntilEmpty: Int?,
     val predictions: List<DailyPrediction>,

@@ -7,15 +7,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.HashSet;
 
 public class ElectricityAnalyzer {
-    private static final double SUDDEN_CHANGE_THRESHOLD = 5.0; // 突然变化阈值（度）
-    private static final double HIGH_USAGE_THRESHOLD = 10.0; // 高用电阈值（度/天）
-    private static final int ANALYSIS_WINDOW_DAYS = 7; // 分析窗口（天）
+    private static final double SUDDEN_CHANGE_THRESHOLD = 5.0;
+    private static final double HIGH_USAGE_THRESHOLD = 10.0;
+    private static final int ANALYSIS_WINDOW_DAYS = 7;
 
-    /**
-     * 分析电量记录，检测异常情况
-     */
     public static List<UsageAnomaly> analyzeUsagePattern(List<ElectricityRecord> records) {
         if (records.size() < 2) return Collections.emptyList();
         List<UsageAnomaly> anomalies = new ArrayList<>();
@@ -39,24 +37,37 @@ public class ElectricityAnalyzer {
             }
         }
 
-        // 检查持续高用电
         List<ElectricityRecord> recentRecords = new ArrayList<>();
         for (ElectricityRecord record : sortedRecords) {
             if (ChronoUnit.DAYS.between(record.getTimestamp(), LocalDateTime.now()) <= ANALYSIS_WINDOW_DAYS) {
                 recentRecords.add(record);
             }
         }
-        if (recentRecords.size() >= 2) {
+        // 去重：同一timestamp只保留一条
+        List<ElectricityRecord> uniqueRecords = new ArrayList<>();
+        HashSet<LocalDateTime> seenTimestamps = new HashSet<>();
+        for (ElectricityRecord r : recentRecords) {
+            if (seenTimestamps.add(r.getTimestamp())) {
+                uniqueRecords.add(r);
+            }
+        }
+        if (uniqueRecords.size() >= 2) {
             double totalChange = 0.0;
-            for (ElectricityRecord record : recentRecords) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("[ElectricityAnalyzer] recentRecords for daily average calculation:\n");
+            for (ElectricityRecord record : uniqueRecords) {
                 totalChange += record.getChange();
+                sb.append(record.getTimestamp()).append(", change=").append(record.getChange()).append("\n");
             }
             double days = ChronoUnit.DAYS.between(
-                    recentRecords.get(recentRecords.size() - 1).getTimestamp(),
-                    recentRecords.get(0).getTimestamp()
+                    uniqueRecords.get(uniqueRecords.size() - 1).getTimestamp(),
+                    uniqueRecords.get(0).getTimestamp()
             );
+            sb.append("totalChange=").append(totalChange).append(", days=").append(days).append("\n");
             if (days > 0) {
                 double dailyAverage = Math.abs(totalChange) / days;
+                sb.append("dailyAverage=").append(dailyAverage);
+                android.util.Log.d("ElectricityAnalyzer", sb.toString());
                 if (dailyAverage > HIGH_USAGE_THRESHOLD) {
                     anomalies.add(new UsageAnomaly(
                             AnomalyType.HIGH_USAGE,
@@ -65,14 +76,22 @@ public class ElectricityAnalyzer {
                             String.format("近期用电量较高：平均%.2f度/天", dailyAverage)
                     ));
                 }
+            } else {
+                android.util.Log.d("ElectricityAnalyzer", sb.toString());
             }
+        }
+        // 如果没有异常，添加NORMAL类型
+        if (anomalies.isEmpty()) {
+            anomalies.add(new UsageAnomaly(
+                AnomalyType.NORMAL,
+                LocalDateTime.now(),
+                0.0,
+                "用电一切正常，感谢您的绿色生活方式，继续保持！"
+            ));
         }
         return anomalies;
     }
 
-    /**
-     * 生成节能建议
-     */
     public static List<String> generateSavingTips(List<UsageAnomaly> anomalies) {
         List<String> tips = new ArrayList<>();
         boolean hasHighUsage = false;
@@ -90,12 +109,20 @@ public class ElectricityAnalyzer {
             tips.add("• 检查是否有电器故障");
             tips.add("• 避免同时使用多个大功率电器");
         }
+        boolean hasNormal = false;
+        for (UsageAnomaly anomaly : anomalies) {
+            if (anomaly.getType() == AnomalyType.NORMAL) hasNormal = true;
+        }
+        if (hasNormal) {
+            tips.add("• 继续保持，感谢您的绿色生活方式！");
+        }
         return tips;
     }
 
     public enum AnomalyType {
-        SUDDEN_CHANGE, // 突然变化
-        HIGH_USAGE // 持续高用电
+        SUDDEN_CHANGE,
+        HIGH_USAGE,
+        NORMAL
     }
 
     public static class UsageAnomaly {

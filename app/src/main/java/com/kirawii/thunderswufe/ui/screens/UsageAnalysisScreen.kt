@@ -11,11 +11,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalClipboardManager
 import com.kirawii.thunderswufe.data.database.ElectricityRecord
 import com.kirawii.thunderswufe.utils.ElectricityAnalyzer
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.kirawii.thunderswufe.ui.viewmodels.UsageAnalysisViewModel
+import com.kirawii.thunderswufe.ml.ModelType
 import com.patrykandpatrick.vico.compose.axis.horizontal.bottomAxis
 import com.patrykandpatrick.vico.compose.axis.vertical.startAxis
 import com.patrykandpatrick.vico.compose.chart.Chart
@@ -26,38 +31,23 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun UsageAnalysisScreen(
     modifier: Modifier = Modifier,
-    records: List<ElectricityRecord> = emptyList()
+    usageAnalysisViewModel: UsageAnalysisViewModel = viewModel(),
+    onBack: (() -> Unit)? = null
 ) {
-    var yType by remember { mutableStateOf("余额") }
-    var xType by remember { mutableStateOf("日") }
-    var timeRange by remember { mutableStateOf("全部") }
     var showAnomalyDialog by remember { mutableStateOf(false) }
     var selectedAnomaly by remember { mutableStateOf<ElectricityAnalyzer.UsageAnomaly?>(null) }
 
-    val filteredRecords = remember(records, timeRange) {
-        val now = java.time.LocalDateTime.now()
-        when (timeRange) {
-            "最近7天" -> records.filter { java.time.temporal.ChronoUnit.DAYS.between(it.timestamp, now) <= 7 }
-            "最近30天" -> records.filter { java.time.temporal.ChronoUnit.DAYS.between(it.timestamp, now) <= 30 }
-            else -> records
-        }
-    }
+    val historicalRecords by usageAnalysisViewModel.historicalRecords.collectAsState()
+    val predictionResult by usageAnalysisViewModel.predictionResult.collectAsState()
+    val isLoadingPrediction by usageAnalysisViewModel.isLoadingPrediction.collectAsState()
 
-    val chartData = remember(filteredRecords, yType) {
-        when (yType) {
-            "余额" -> filteredRecords.map { it.balance }.reversed()
-            else -> filteredRecords.map { it.change }.reversed()
-        }
+    // 只按时间（日）展示余额
+    val filteredRecords = remember(historicalRecords) {
+        val seen = mutableSetOf<java.time.LocalDateTime>()
+        historicalRecords.filter { seen.add(it.timestamp) }
     }
-
-    val labels = remember(filteredRecords, xType) {
-        when (xType) {
-            "日" -> filteredRecords.map { it.timestamp.toLocalDate().toString() }.reversed()
-            "月" -> filteredRecords.map { it.timestamp.monthValue.toString() + "月" }.reversed()
-            "小时" -> filteredRecords.map { it.timestamp.hour.toString() + ":00" }.reversed()
-            else -> filteredRecords.map { it.timestamp.toLocalDate().toString() }.reversed()
-        }
-    }
+    val chartData = remember(filteredRecords) { filteredRecords.map { it.balance }.reversed() }
+    val labels = remember(filteredRecords) { filteredRecords.map { it.timestamp.toLocalDate().toString() }.reversed() }
 
     val anomalies = remember(filteredRecords) {
         ElectricityAnalyzer.analyzeUsagePattern(filteredRecords)
@@ -73,9 +63,9 @@ fun UsageAnalysisScreen(
         val min = filteredRecords.minByOrNull { it.change }?.change ?: 0.0
         mapOf(
             "总用电量(度)" to String.format("%.2f", total),
-            "平均每日用电(度)" to String.format("%.2f", avg),
-            "最大单日用电(度)" to String.format("%.2f", max),
-            "最小单日用电(度)" to String.format("%.2f", min)
+            "平均用电量(度)" to String.format("%.2f", avg),
+            "最大单次用电量(度)" to String.format("%.2f", max),
+            "最小单次用电量(度)" to String.format("%.2f", min)
         )
     }
 
@@ -86,20 +76,14 @@ fun UsageAnalysisScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Text(
-                text = "详细用电分析",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Y轴：")
-                SegmentedButton(options = listOf("余额", "用电量"), selected = yType) { yType = it }
-                Spacer(Modifier.width(16.dp))
-                Text("X轴：")
-                SegmentedButton(options = listOf("日", "月", "小时"), selected = xType) { xType = it }
-                Spacer(Modifier.width(16.dp))
-                Text("范围：")
-                SegmentedButton(options = listOf("全部", "最近7天", "最近30天"), selected = timeRange) { timeRange = it }
+            if (onBack != null) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { onBack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                    Text("详细用电分析", style = MaterialTheme.typography.titleLarge)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
 
@@ -109,26 +93,79 @@ fun UsageAnalysisScreen(
                     modifier = Modifier.padding(16.dp)
                 ) {
                     Text(
-                        text = "用电趋势",
+                        text = "用电预测 (ML)",
                         style = MaterialTheme.typography.titleMedium
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    if (chartData.isNotEmpty()) {
-                        val chartDataArray = chartData.toTypedArray()
-                        Chart(
-                            chart = lineChart(),
-                            model = entryModelOf(*chartDataArray),
-                            startAxis = startAxis(),
-                            bottomAxis = bottomAxis(valueFormatter = { x, _ ->
-                                val idx = x.toInt().coerceIn(0, labels.lastIndex)
-                                labels.getOrElse(idx) { "" }
-                            }),
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("模型：")
+                        var modelType by remember { mutableStateOf(ModelType.LSTM) }
+                        SegmentedButton(
+                            options = listOf("LSTM", "线性回归"),
+                            selected = when (modelType) {
+                                ModelType.LSTM -> "LSTM"
+                                ModelType.LINEAR_REGRESSION_KERAS, ModelType.SIMPLE_LINEAR -> "线性回归"
+                            }
+                        ) {
+                            modelType = when (it) {
+                                "LSTM" -> ModelType.LSTM
+                                else -> ModelType.LINEAR_REGRESSION_KERAS
+                            }
+                            usageAnalysisViewModel.runPrediction(modelType)
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Button(
+                            onClick = { usageAnalysisViewModel.runPrediction(modelType) },
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp)
-                        )
-                    } else {
-                        Text("暂无数据")
+                                .height(44.dp)
+                                .defaultMinSize(minWidth = 120.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "刷新", modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("重新预测", maxLines = 1, style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    when {
+                        isLoadingPrediction -> {
+                            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                            Text("正在预测，请稍候...", modifier = Modifier.align(Alignment.CenterHorizontally))
+                        }
+                        predictionResult?.predictions?.isNotEmpty() == true -> {
+                            var predYType by remember { mutableStateOf("余额") }
+Row(verticalAlignment = Alignment.CenterVertically) {
+    Text("Y轴：")
+    SegmentedButton(options = listOf("余额", "用电量"), selected = predYType) { predYType = it }
+}
+val predList = predictionResult!!.predictions
+val yValues = when (predYType) {
+    "余额" -> predList.map { it.remainingBalance }
+    else -> predList.map { it.predictedUsage }
+}
+val xLabels = predList.indices.map { (it + 1).toString() }
+val labelStep = if (xLabels.size > 15) xLabels.size / 7 else 1
+Chart(
+    chart = lineChart(),
+    model = entryModelOf(*yValues.toTypedArray()),
+    startAxis = startAxis(),
+    bottomAxis = bottomAxis(valueFormatter = { x, _ ->
+        val idx = x.toInt().coerceIn(0, xLabels.lastIndex)
+        if (labelStep == 1 || idx % labelStep == 0 || idx == xLabels.lastIndex) xLabels.getOrElse(idx) { "" } else ""
+    }),
+    modifier = Modifier
+        .fillMaxWidth()
+        .height(200.dp)
+)
+Text("Y轴：${if (predYType == "余额") "预测剩余电量(元)" else "预测每日用电量(度)"}", style = MaterialTheme.typography.bodySmall)
+Text("置信度: ${String.format("%.2f", predictionResult!!.confidence)}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        !predictionResult?.error.isNullOrBlank() -> {
+                            Text("预测失败: ${predictionResult?.error}", color = MaterialTheme.colorScheme.error)
+                        }
+                        else -> {
+                            Text("暂无预测数据")
+                        }
                     }
                 }
             }

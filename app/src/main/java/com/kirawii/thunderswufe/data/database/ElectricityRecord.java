@@ -4,7 +4,10 @@ import androidx.room.Entity;
 import androidx.room.PrimaryKey;
 import java.time.LocalDateTime;
 
-@Entity(tableName = "electricity_records")
+@Entity(
+    tableName = "electricity_records",
+    indices = {@androidx.room.Index(value = {"timestamp", "roomNo"}, unique = true)}
+)
 public class ElectricityRecord {
     @PrimaryKey(autoGenerate = true)
     private long id;

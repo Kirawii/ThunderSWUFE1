@@ -46,7 +46,6 @@ public class NotificationPermissionManager {
     }
 
     private void showPermissionRationaleDialog(Runnable onGranted, Runnable onDenied) {
-        // TODO: 显示权限说明对话框
         if (permissionLauncher != null) permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
     }
 } 

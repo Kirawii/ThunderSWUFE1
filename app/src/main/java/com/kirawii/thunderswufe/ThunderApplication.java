@@ -3,7 +3,6 @@ package com.kirawii.thunderswufe;
 import android.app.Application;
 import android.content.Context;
 import android.util.Log;
-
 import androidx.annotation.NonNull;
 import androidx.room.Room;
 import androidx.work.BackoffPolicy;
@@ -12,9 +11,7 @@ import androidx.work.Configuration;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.PeriodicWorkRequest;
-
 import androidx.work.WorkManager;
-
 import com.kirawii.thunderswufe.data.database.ElectricityDatabase;
 import com.kirawii.thunderswufe.data.preferences.UserPreferencesManager;
 import com.kirawii.thunderswufe.ml.ElectricityPredictor;

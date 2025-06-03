@@ -1,4 +1,4 @@
-// 在 SettingsScreen.kt
+
 package com.kirawii.thunderswufe.ui.screens
 
 import androidx.compose.foundation.layout.*
@@ -18,19 +18,16 @@ import androidx.compose.material.icons.filled.ArrowBack
 
 @Composable
 fun SettingsScreen(
-    viewModel: SettingsViewModel, // 接收 ViewModel
+    viewModel: SettingsViewModel,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
-    onImportDone: (() -> Unit)? = null // 导入后回调
+    onImportDone: (() -> Unit)? = null
 ) {
-    val uiState = viewModel.uiState.value // 直接取 State 对象的 value
-
-    // 用于本地编辑的临时状态，当用户完成编辑后，通过 ViewModel 更新 DataStore
+    val uiState = viewModel.uiState.value
     var localThreshold by remember { mutableStateOf(uiState.threshold) }
     var localRoomNo by remember { mutableStateOf(uiState.roomNo) }
     var localBuildingNo by remember { mutableStateOf(uiState.buildingNo) }
     var localAreaNo by remember { mutableStateOf(uiState.areaNo) }
-    // notificationEnabled 直接用 uiState.notificationEnabled
 
     Column(
         modifier = modifier
@@ -38,7 +35,6 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 顶部带返回按钮的栏
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
@@ -89,9 +85,9 @@ fun SettingsScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Switch(
-                checked = uiState.notificationEnabled, // 直接使用 ViewModel 中的状态
+                checked = uiState.notificationEnabled,
                 onCheckedChange = { enabled ->
-                    viewModel.updateNotificationEnabled(enabled) // 通过 ViewModel 更新
+                    viewModel.updateNotificationEnabled(enabled)
                 }
             )
             Text("启用电量提醒")
@@ -105,7 +101,6 @@ fun SettingsScreen(
                     buildingNo = localBuildingNo,
                     areaNo = localAreaNo
                 )
-                // 可以在这里加一个提示，比如 Toast 或 Snackbar
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -114,7 +109,6 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(32.dp))
         Divider()
         Spacer(modifier = Modifier.height(16.dp))
-        // 导入历史CSV数据
         val context = LocalContext.current
         var showImportResult by remember { mutableStateOf("") }
         val scope = rememberCoroutineScope()
@@ -123,7 +117,7 @@ fun SettingsScreen(
             scope.launch {
                 showImportResult = "正在导入..."
                 showImportResult = importCsvAndInsertDb(context)
-                onImportDone?.invoke() // 导入后回调，主界面可自动刷新
+                onImportDone?.invoke()
             }
         }) {
             Text("导入 assets/balance_data_副本.csv")

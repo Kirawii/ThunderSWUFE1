@@ -4,7 +4,7 @@ import androidx.room.Database;
 import androidx.room.RoomDatabase;
 import androidx.room.TypeConverters;
 
-@Database(entities = {ElectricityRecord.class}, version = 2)
+@Database(entities = {ElectricityRecord.class}, version = 3)
 @TypeConverters({Converters.class})
 public abstract class ElectricityDatabase extends RoomDatabase {
     public abstract ElectricityDao electricityDao();

@@ -51,7 +51,6 @@ class SettingsViewModel(
         userPreferencesManager.setRoomInfo(currentInfo)
         refreshUiState()
     }
-    // ... 类似地为 buildingNo, areaNo 创建更新函数 ...
 
     fun updateBuildingNo(newBuildingNo: String) {
         val currentInfo = userPreferencesManager.getRoomInfo()
@@ -87,7 +86,6 @@ class SettingsViewModel(
     }
 }
 
-// ViewModel Factory (如果 ViewModel 构造函数有参数且不使用 Hilt)
 class SettingsViewModelFactory(private val application: ThunderApplication) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
