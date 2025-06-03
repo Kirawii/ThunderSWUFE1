@@ -14,11 +14,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.kirawii.thunderswufe.data.preferences.UserPreferencesManager
+import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModel
 
-class UsageAnalysisViewModel(application: Application) : AndroidViewModel(application) {
+class UsageAnalysisViewModel(
+    application: Application,
+    private val settingsViewModel: SettingsViewModel
+) : AndroidViewModel(application) {
 
     private val electricityDao = (application as ThunderApplication).database.electricityDao()
     private val predictor: ElectricityPredictor = (application as ThunderApplication).electricityPredictor
+    private val userPreferencesManager = (application as ThunderApplication).userPreferencesManager
 
     private val _historicalRecords = MutableStateFlow<List<ElectricityRecord>>(emptyList())
     val historicalRecords: StateFlow<List<ElectricityRecord>> = _historicalRecords.asStateFlow()
@@ -31,8 +37,10 @@ class UsageAnalysisViewModel(application: Application) : AndroidViewModel(applic
 
     init {
         viewModelScope.launch {
-            electricityDao.getAllRecords().collect { records ->
-                _historicalRecords.value = records
+            settingsViewModel.roomNoFlow.collect { roomNo ->
+                electricityDao.getAllRecordsByRoom(roomNo).collect { records ->
+                    _historicalRecords.value = records
+                }
             }
         }
     }

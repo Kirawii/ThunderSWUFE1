@@ -31,7 +31,7 @@ class ElectricityPredictor(private val context: Context) {
         private const val SCALER_PARAMS_FILE = "scaler_params.json"
         private const val DEFAULT_INPUT_LENGTH = 7
         private const val MODEL_OUTPUT_STEPS = 1
-        private const val PREDICTION_HORIZON_DAYS = 3
+        private const val PREDICTION_HORIZON_DAYS = 7
     }
 
     private var scalerScale: FloatArray? = null
@@ -212,10 +212,9 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
                         remainingBalance = tempRemainingBalance
                     )
                 )
-                if (currentScaledHistory.isNotEmpty()) {
-                    currentScaledHistory.removeAt(0)
-                }
-                currentScaledHistory.add(predictedScaledUsage)
+                // 更新预测输入，移除最早的记录，添加新的预测结果
+                currentScaledHistory.removeAt(0)
+                currentScaledHistory.add(scaleUsage(predictedRawUsage.toFloat()))  // 将原始的预测用电量转换为归一化值
 
                 if (tempRemainingBalance <= floatComparisonThreshold) {
     tempRemainingBalance = 0.0 // 确保为0
@@ -296,12 +295,15 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
         historicalDailyUsage: Double,
         customError: String? = null
     ): PredictionResult {
-        // ... (简单线性预测逻辑基本不变, 可以把outputLength 改为 PREDICTION_HORIZON_DAYS) ...
         if (historicalDailyUsage <= floatComparisonThreshold && currentBalance > floatComparisonThreshold) {
-            return PredictionResult( null,
-                List(PREDICTION_HORIZON_DAYS) { i -> DailyPrediction(LocalDateTime.now().plusDays(i.toLong() + 1), 0.0, currentBalance)},
-                0.5f, customError ?: "日均用电为零但有余额"
-            )
+            var tempRemainingBalance = currentBalance
+            val dailyPredictions = mutableListOf<DailyPrediction>()
+            var i = 0
+            while (tempRemainingBalance > floatComparisonThreshold) {
+                dailyPredictions.add(DailyPrediction(LocalDateTime.now().plusDays(i.toLong() + 1), 0.0, tempRemainingBalance))
+                i++
+            }
+            return PredictionResult(null, dailyPredictions, 0.5f, customError ?: "日均用电为零但有余额")
         }
         if (historicalDailyUsage <= floatComparisonThreshold && currentBalance <= floatComparisonThreshold) {
             return PredictionResult(0, emptyList(),1.0f, customError)
@@ -310,16 +312,18 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
         val dailyPredictions = mutableListOf<DailyPrediction>()
         var tempRemainingBalance = currentBalance
         val today = LocalDateTime.now()
-
-        for (i in 0 until PREDICTION_HORIZON_DAYS) {
+        // 预测直到余额为 0 或达到最大预测天数
+        var i = 0
+        while (tempRemainingBalance > floatComparisonThreshold && i < 365) {
             val predictedUsageForDay = historicalDailyUsage
             tempRemainingBalance -= predictedUsageForDay
             if (tempRemainingBalance < 0) tempRemainingBalance = 0.0 // 余额不应为负
-            dailyPredictions.add(DailyPrediction(today.plusDays(i.toLong() + 1), max(0.0, predictedUsageForDay), tempRemainingBalance))
+            dailyPredictions.add(DailyPrediction(LocalDateTime.now().plusDays(i.toLong() + 1), max(0.0, predictedUsageForDay), tempRemainingBalance))
             if (tempRemainingBalance == 0.0) break // 提前耗尽
+            i++
         }
-        // 如果预测天数内未耗尽，补齐剩余天数的预测
         if (dailyPredictions.size < PREDICTION_HORIZON_DAYS && tempRemainingBalance == 0.0) {
+            val today = LocalDateTime.now()
             for (i in dailyPredictions.size until PREDICTION_HORIZON_DAYS) {
                 dailyPredictions.add(DailyPrediction(today.plusDays(i.toLong() + 1), 0.0, 0.0))
             }

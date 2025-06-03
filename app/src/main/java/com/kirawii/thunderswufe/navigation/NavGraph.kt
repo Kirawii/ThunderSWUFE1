@@ -1,12 +1,7 @@
 package com.kirawii.thunderswufe.navigation
-
-import com.kirawii.thunderswufe.ui.screens.HomeViewModel
-import com.kirawii.thunderswufe.ui.screens.HomeViewModelFactory
-
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.runtime.collectAsState
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -30,6 +25,10 @@ fun NavGraph(
 ) {
     val application = LocalContext.current.applicationContext as ThunderApplication
 
+    val settingsViewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModelFactory(application)
+    )
+
     NavHost(
         navController = navController,
         startDestination = startDestination
@@ -46,21 +45,16 @@ fun NavGraph(
         }
 
         composable(Screen.Settings.route) {
-            val settingsViewModel: SettingsViewModel = viewModel(
-                factory = SettingsViewModelFactory(application)
-            )
             SettingsScreen(
-    viewModel = settingsViewModel,
-    onBack = { navController.popBackStack() }
-)
+                viewModel = settingsViewModel,
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(Screen.UsageAnalysis.route) {
-    val homeViewModel: HomeViewModel = viewModel(factory = HomeViewModelFactory(application))
-    val recordsState = homeViewModel.records.collectAsState()
-    UsageAnalysisScreen(
-        onBack = { navController.popBackStack() }
-    )
-}
+            UsageAnalysisScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
     }
 }

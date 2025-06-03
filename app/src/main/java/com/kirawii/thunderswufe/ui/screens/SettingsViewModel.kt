@@ -8,6 +8,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 data class SettingsUiState(
     val threshold: String = "10.0",
     val roomNo: String = "",
@@ -19,6 +23,9 @@ data class SettingsUiState(
 class SettingsViewModel(
     private val userPreferencesManager: UserPreferencesManager
 ) : ViewModel() {
+
+    private val _roomNoFlow = MutableStateFlow(userPreferencesManager.getRoomInfo().roomNo)
+    val roomNoFlow: StateFlow<String> = _roomNoFlow.asStateFlow()
 
     private val _uiState = mutableStateOf(SettingsUiState())
     val uiState: State<SettingsUiState> get() = _uiState
@@ -49,6 +56,7 @@ class SettingsViewModel(
         val currentInfo = userPreferencesManager.getRoomInfo()
         currentInfo.roomNo = newRoomNo
         userPreferencesManager.setRoomInfo(currentInfo)
+        _roomNoFlow.value = newRoomNo
         refreshUiState()
     }
 

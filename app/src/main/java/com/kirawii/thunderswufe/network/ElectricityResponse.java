@@ -1,5 +1,4 @@
 package com.kirawii.thunderswufe.network;
-
 import com.google.gson.annotations.SerializedName;
 
 public class ElectricityResponse {

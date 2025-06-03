@@ -13,8 +13,11 @@ public interface ElectricityDao {
     @Query("SELECT * FROM electricity_records ORDER BY timestamp DESC")
     Flow<List<ElectricityRecord>> getAllRecords();
 
-    @Query("SELECT * FROM electricity_records WHERE timestamp >= :startTime AND timestamp <= :endTime ORDER BY timestamp DESC")
-    Flow<List<ElectricityRecord>> getRecordsByTimeRange(LocalDateTime startTime, LocalDateTime endTime);
+    @Query("SELECT * FROM electricity_records WHERE roomNo = :roomNo ORDER BY timestamp DESC")
+    Flow<List<ElectricityRecord>> getAllRecordsByRoom(String roomNo);
+
+    @Query("SELECT * FROM electricity_records WHERE roomNo = :roomNo AND timestamp >= :startTime AND timestamp <= :endTime ORDER BY timestamp DESC")
+    Flow<List<ElectricityRecord>> getRecordsByTimeRange(String roomNo, LocalDateTime startTime, LocalDateTime endTime);
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertRecord(ElectricityRecord record);

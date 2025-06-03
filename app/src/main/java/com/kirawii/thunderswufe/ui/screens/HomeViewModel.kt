@@ -13,12 +13,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModel
 
-class HomeViewModel(application: Application) : AndroidViewModel(application) {
+class HomeViewModel(
+    application: Application,
+    private val settingsViewModel: SettingsViewModel
+) : AndroidViewModel(application) {
 
     private val electricityDao = (application as ThunderApplication).database.electricityDao()
     private val workManager = WorkManager.getInstance(application.applicationContext)
     private val predictor = (application as ThunderApplication).electricityPredictor
+    private val userPreferencesManager = (application as ThunderApplication).userPreferencesManager
 
     private val _records = MutableStateFlow<List<ElectricityRecord>>(emptyList())
     val records: StateFlow<List<ElectricityRecord>> = _records.asStateFlow()
@@ -37,9 +42,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            electricityDao.getAllRecords().collect { newRecords ->
-                _records.value = newRecords
-                runPredictionWithRecords(newRecords)
+            settingsViewModel.roomNoFlow.collect { roomNo ->
+                electricityDao.getAllRecordsByRoom(roomNo).collect { newRecords ->
+                    _records.value = newRecords
+                    runPredictionWithRecords(newRecords)
+                }
             }
         }
     }

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 竖屏布局尺寸 -->
+    <dimen name="chart_height">250dp</dimen>
+    <dimen name="content_padding">16dp</dimen>
+    <dimen name="card_spacing">12dp</dimen>
+</resources>

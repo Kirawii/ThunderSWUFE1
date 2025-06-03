@@ -7,14 +7,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-// import com.kirawii.thunderswufe.data.preferences.UserPreferencesManager // 不再直接需要
-import com.kirawii.thunderswufe.ui.viewmodels.SettingsUiState // 导入 ViewModel 和 UiState
 import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle // 推荐
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 @Composable
 fun SettingsScreen(
@@ -29,15 +28,13 @@ fun SettingsScreen(
     var localBuildingNo by remember { mutableStateOf(uiState.buildingNo) }
     var localAreaNo by remember { mutableStateOf(uiState.areaNo) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    Column(modifier = modifier.fillMaxSize()) {
+        // 顶部栏固定
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             if (onBack != null) {
                 IconButton(onClick = { onBack() }) {
@@ -116,7 +113,7 @@ fun SettingsScreen(
         Button(onClick = {
             scope.launch {
                 showImportResult = "正在导入..."
-                showImportResult = importCsvAndInsertDb(context)
+                showImportResult = importCsvAndInsertDb(context, localRoomNo)
                 onImportDone?.invoke()
             }
         }) {

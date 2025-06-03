@@ -12,6 +12,7 @@ import com.kirawii.thunderswufe.network.NetworkModule
 import com.kirawii.thunderswufe.notification.ElectricityNotificationManager
 import com.kirawii.thunderswufe.utils.ElectricityAnalyzer
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import java.time.Duration
 import java.time.LocalDateTime
@@ -19,6 +20,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import retrofit2.Response
 import kotlin.coroutines.resumeWithException
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ElectricityCheckWorker(
     private val context: Context,
     workerParams: WorkerParameters

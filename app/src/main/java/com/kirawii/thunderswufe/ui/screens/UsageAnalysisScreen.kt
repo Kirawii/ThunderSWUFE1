@@ -1,8 +1,11 @@
 package com.kirawii.thunderswufe.ui.screens
 
+import android.app.Application
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,12 +17,17 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalClipboardManager
 import com.kirawii.thunderswufe.data.database.ElectricityRecord
 import com.kirawii.thunderswufe.utils.ElectricityAnalyzer
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kirawii.thunderswufe.ui.viewmodels.UsageAnalysisViewModel
+import com.kirawii.thunderswufe.ThunderApplication
+import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModel
+import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModelFactory
+import com.kirawii.thunderswufe.ui.viewmodels.UsageAnalysisViewModelFactory
 import com.kirawii.thunderswufe.ml.ModelType
 import com.patrykandpatrick.vico.compose.axis.horizontal.bottomAxis
 import com.patrykandpatrick.vico.compose.axis.vertical.startAxis
@@ -31,7 +39,14 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun UsageAnalysisScreen(
     modifier: Modifier = Modifier,
-    usageAnalysisViewModel: UsageAnalysisViewModel = viewModel(),
+    usageAnalysisViewModel: UsageAnalysisViewModel = viewModel(
+        factory = UsageAnalysisViewModelFactory(
+            application = LocalContext.current.applicationContext as Application,
+            settingsViewModel = viewModel(
+                factory = SettingsViewModelFactory(LocalContext.current.applicationContext as ThunderApplication)
+            )
+        )
+    ),
     onBack: (() -> Unit)? = null
 ) {
     var showAnomalyDialog by remember { mutableStateOf(false) }
@@ -114,16 +129,16 @@ fun UsageAnalysisScreen(
                             usageAnalysisViewModel.runPrediction(modelType)
                         }
                         Spacer(Modifier.width(16.dp))
-                        Button(
+                        IconButton(
                             onClick = { usageAnalysisViewModel.runPrediction(modelType) },
-                            modifier = Modifier
-                                .height(44.dp)
-                                .defaultMinSize(minWidth = 120.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            modifier = Modifier.size(44.dp)
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "刷新", modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("重新预测", maxLines = 1, style = MaterialTheme.typography.titleMedium)
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "重新预测",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -134,31 +149,33 @@ fun UsageAnalysisScreen(
                         }
                         predictionResult?.predictions?.isNotEmpty() == true -> {
                             var predYType by remember { mutableStateOf("余额") }
-Row(verticalAlignment = Alignment.CenterVertically) {
-    Text("Y轴：")
-    SegmentedButton(options = listOf("余额", "用电量"), selected = predYType) { predYType = it }
-}
-val predList = predictionResult!!.predictions
-val yValues = when (predYType) {
-    "余额" -> predList.map { it.remainingBalance }
-    else -> predList.map { it.predictedUsage }
-}
-val xLabels = predList.indices.map { (it + 1).toString() }
-val labelStep = if (xLabels.size > 15) xLabels.size / 7 else 1
-Chart(
-    chart = lineChart(),
-    model = entryModelOf(*yValues.toTypedArray()),
-    startAxis = startAxis(),
-    bottomAxis = bottomAxis(valueFormatter = { x, _ ->
-        val idx = x.toInt().coerceIn(0, xLabels.lastIndex)
-        if (labelStep == 1 || idx % labelStep == 0 || idx == xLabels.lastIndex) xLabels.getOrElse(idx) { "" } else ""
-    }),
-    modifier = Modifier
-        .fillMaxWidth()
-        .height(200.dp)
-)
-Text("Y轴：${if (predYType == "余额") "预测剩余电量(元)" else "预测每日用电量(度)"}", style = MaterialTheme.typography.bodySmall)
-Text("置信度: ${String.format("%.2f", predictionResult!!.confidence)}", style = MaterialTheme.typography.bodySmall)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Y轴：")
+                                SegmentedButton(options = listOf("余额", "用电量"), selected = predYType) { predYType = it }
+                            }
+                            val predList = predictionResult!!.predictions
+                            val yValues = when (predYType) {
+                                "余额" -> predList.map { it.remainingBalance }
+                                else -> predList.map { it.predictedUsage }
+                            }
+                            val xLabels = predList.map { it.date.format(DateTimeFormatter.ofPattern("MM-dd")) }
+                            val labelStep = if (xLabels.size > 7) xLabels.size / 7 else 1
+                            Chart(
+                                chart = lineChart(),
+                                model = entryModelOf(*yValues.toTypedArray()),
+                                startAxis = startAxis(),
+                                bottomAxis = bottomAxis(
+                                    valueFormatter = { x, _ ->
+                                        val idx = x.toInt().coerceIn(0, xLabels.lastIndex)
+                                        if (labelStep == 1 || idx % labelStep == 0 || idx == xLabels.lastIndex) xLabels.getOrElse(idx) { "" } else ""
+                                    }
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp)
+                            )
+                            Text("Y轴：${if (predYType == "余额") "预测剩余电量(元)" else "预测每日用电量(度)"}", style = MaterialTheme.typography.bodySmall)
+                            Text("置信度: ${String.format("%.2f", predictionResult!!.confidence)}", style = MaterialTheme.typography.bodySmall)
                         }
                         !predictionResult?.error.isNullOrBlank() -> {
                             Text("预测失败: ${predictionResult?.error}", color = MaterialTheme.colorScheme.error)

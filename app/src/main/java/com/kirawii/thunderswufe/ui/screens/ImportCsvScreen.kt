@@ -14,10 +14,12 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import com.kirawii.thunderswufe.data.database.ElectricityRecord
+import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModel
 
 @Composable
 fun ImportCsvScreen(
     context: Context,
+    settingsViewModel: SettingsViewModel,
     onImportFinished: (() -> Unit)? = null
 ) {
     val scope = rememberCoroutineScope()
@@ -33,7 +35,7 @@ fun ImportCsvScreen(
         Button(onClick = {
             scope.launch {
                 importStatus = "正在导入..."
-                val result = importCsvAndInsertDb(context)
+                val result = importCsvAndInsertDb(context, settingsViewModel.uiState.value.roomNo)
                 importStatus = result
                 onImportFinished?.invoke()
             }
@@ -45,11 +47,11 @@ fun ImportCsvScreen(
     }
 }
 
-suspend fun importCsvAndInsertDb(context: Context): String {
+suspend fun importCsvAndInsertDb(context: Context, roomNo: String): String {
     return try {
         val assetManager = context.assets
         val inputStream = assetManager.open("balance_data_副本.csv")
-        val records = parseRecordsFromCsv(inputStream)
+        val records = parseRecordsFromCsv(inputStream, roomNo)
         insertRecordsToDb(context, records)
         "导入成功：共${records.size}条数据"
     } catch (e: Exception) {
@@ -57,7 +59,7 @@ suspend fun importCsvAndInsertDb(context: Context): String {
     }
 }
 
-fun parseRecordsFromCsv(inputStream: InputStream): List<ElectricityRecord> {
+fun parseRecordsFromCsv(inputStream: InputStream, roomNo: String): List<ElectricityRecord> {
     val reader = inputStream.bufferedReader()
     val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     val records = mutableListOf<ElectricityRecord>()
@@ -74,7 +76,7 @@ fun parseRecordsFromCsv(inputStream: InputStream): List<ElectricityRecord> {
                     timestamp,
                     balance,
                     change,
-                    "csv导入"
+                    roomNo
                 )
             )
         }
