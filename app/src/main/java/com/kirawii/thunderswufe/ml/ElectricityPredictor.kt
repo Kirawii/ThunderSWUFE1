@@ -5,28 +5,22 @@ import android.util.Log
 import com.kirawii.thunderswufe.data.database.ElectricityRecord
 import org.json.JSONObject
 import org.tensorflow.lite.Interpreter
-import java.io.FileInputStream
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.channels.FileChannel
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.math.max
 
 enum class ModelType {
-    LSTM,
     LINEAR_REGRESSION_KERAS,
     SIMPLE_LINEAR
 }
 
 class ElectricityPredictor(private val context: Context) {
-    private var lstmInterpreter: Interpreter? = null
     private var lrKerasInterpreter: Interpreter? = null
 
     // 模型文件名常量
     companion object {
-        private const val LSTM_MODEL_FILE = "lstm_model.tflite"
         private const val LR_KERAS_MODEL_FILE = "linear_regression_keras.tflite"
         private const val SCALER_PARAMS_FILE = "scaler_params.json"
         private const val DEFAULT_INPUT_LENGTH = 7
@@ -44,13 +38,6 @@ class ElectricityPredictor(private val context: Context) {
     }
 
     private fun loadAllModelsAndParams() {
-        lstmInterpreter = loadTFLiteModel(LSTM_MODEL_FILE)
-        if (lstmInterpreter != null) {
-            Log.i("ElectricityPredictor", "LSTM model '$LSTM_MODEL_FILE' loaded successfully.")
-        } else {
-            Log.e("ElectricityPredictor", "Failed to load LSTM model '$LSTM_MODEL_FILE'.")
-        }
-
         lrKerasInterpreter = loadTFLiteModel(LR_KERAS_MODEL_FILE)
         if (lrKerasInterpreter != null) {
             Log.i("ElectricityPredictor", "Keras Linear Regression model '$LR_KERAS_MODEL_FILE' loaded successfully.")
@@ -64,21 +51,18 @@ class ElectricityPredictor(private val context: Context) {
         }
     }
 
-    @Throws(IOException::class)
     private fun loadTFLiteModel(modelFileName: String): Interpreter? {
         return try {
-            context.assets.openFd(modelFileName).use { fileDescriptor ->
-                FileInputStream(fileDescriptor.fileDescriptor).use { inputStream ->
-                    val fileChannel = inputStream.channel
-                    val startOffset = fileDescriptor.startOffset
-                    val declaredLength = fileDescriptor.declaredLength
-                    val mappedByteBuffer =
-                        fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
-                    Interpreter(mappedByteBuffer)
-                }
+            context.assets.open(modelFileName).use { inputStream ->
+                val bytes = inputStream.readBytes()
+                val byteBuffer = ByteBuffer.allocateDirect(bytes.size)
+                byteBuffer.order(ByteOrder.nativeOrder())
+                byteBuffer.put(bytes)
+                byteBuffer.rewind()
+                Interpreter(byteBuffer)
             }
         } catch (e: Exception) {
-            Log.e("ElectricityPredictor", "Error loading TFLite model '$modelFileName': ${e.message}", e)
+            Log.e("ElectricityPredictor", "TFLite模型 '$modelFileName' 加载失败：${e.message}", e)
             null
         }
     }
@@ -100,6 +84,7 @@ class ElectricityPredictor(private val context: Context) {
             scalerMin = null
         }
     }
+
     private fun scaleUsage(rawValue: Float): Float {
         if (scalerScale == null || scalerMin == null || scalerScale!!.isEmpty()) {
             Log.w("ElectricityPredictor", "Scaler not initialized, returning raw value for scaling.")
@@ -116,10 +101,9 @@ class ElectricityPredictor(private val context: Context) {
         return (scaledValue - scalerMin!![0]) / scalerScale!![0]
     }
 
-
     fun predictFutureUsage(
         records: List<ElectricityRecord>,
-        modelTypeToUse: ModelType = ModelType.LSTM
+        modelTypeToUse: ModelType = ModelType.LINEAR_REGRESSION_KERAS
     ): PredictionResult {
         if (records.isEmpty()) {
             return PredictionResult(null, emptyList(), 0.0f, "没有历史数据")
@@ -143,26 +127,13 @@ class ElectricityPredictor(private val context: Context) {
         }
         val initialScaledHistory = initialRawHistory.map { scaleUsage(it) }.toMutableList()
 
-        val activeInterpreter: Interpreter?
-        val modelNameForLog: String
-        when (modelTypeToUse) {
-            ModelType.LSTM -> {
-                activeInterpreter = lstmInterpreter
-                modelNameForLog = "LSTM"
-            }
-            ModelType.LINEAR_REGRESSION_KERAS -> {
-                activeInterpreter = lrKerasInterpreter
-                modelNameForLog = "Keras LR"
-            }
-            ModelType.SIMPLE_LINEAR -> {
-                Log.i("ElectricityPredictor", "Simple linear prediction 已被移除。")
-                return PredictionResult(null, emptyList(), 0.0f, "Simple linear prediction 已被移除")
-            }
-        }
+        val activeInterpreter = lrKerasInterpreter
+        val modelNameForLog = "Keras LR"
 
         if (activeInterpreter == null) {
-            Log.e("ElectricityPredictor", "$modelNameForLog interpreter is null. 无法进行预测。")
-            return PredictionResult(null, emptyList(), 0.0f, "$modelNameForLog interpreter is null. 无法进行预测。")
+            val modelFileName = LR_KERAS_MODEL_FILE
+            Log.e("ElectricityPredictor", "$modelNameForLog interpreter is null. 无法进行预测。请检查 assets 目录下的 $modelFileName 是否存在且为有效 TFLite 模型。")
+            return PredictionResult(null, emptyList(), 0.0f, "$modelNameForLog interpreter is null. 无法进行预测。请检查 assets 目录下的 $modelFileName 是否存在且为有效 TFLite 模型。")
         }
         if (scalerScale == null || scalerMin == null){
             Log.e("ElectricityPredictor", "Scaler params are null. Predictions will be inaccurate. 无法进行预测。")
@@ -176,7 +147,7 @@ class ElectricityPredictor(private val context: Context) {
 
         try {
             var dayOffset = 0
-while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 最多预测一年，防止死循环
+            while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 最多预测一年，防止死循环
                 if (currentScaledHistory.size < DEFAULT_INPUT_LENGTH) {
                     Log.e("ElectricityPredictor", "History size became less than $DEFAULT_INPUT_LENGTH during prediction loop.")
                     break // Should not happen
@@ -193,7 +164,7 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
                 activeInterpreter.run(inputBuffer, outputBuffer)
                 outputBuffer.rewind()
 
-                val predictedScaledUsage = outputBuffer.float // 模型输出的是下一天的归一化用电量
+                val predictedScaledUsage = outputBuffer.float // 只取一个 float
                 val predictedRawUsage = inverseScaleUsage(predictedScaledUsage)
 
                 tempRemainingBalance -= predictedRawUsage
@@ -206,12 +177,14 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
                 )
                 // 更新预测输入，移除最早的记录，添加新的预测结果
                 currentScaledHistory.removeAt(0)
-                currentScaledHistory.add(scaleUsage(predictedRawUsage.toFloat()))  // 将原始的预测用电量转换为归一化值
+                currentScaledHistory.add(scaleUsage(predictedRawUsage.toFloat()))
 
                 if (tempRemainingBalance <= floatComparisonThreshold) {
-    tempRemainingBalance = 0.0
-    break
-}
+                    tempRemainingBalance = 0.0
+                    break
+                }
+                dayOffset += 1 // 每次只步进一天
+
             }
 
             val historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords) // 用于置信度和可能的耗尽估算
@@ -235,7 +208,6 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
                 }
             }
 
-
             if (days == dailyPredictions.size && balanceForDaysCalc > floatComparisonThreshold) {
                 val lastPredictedUsage = dailyPredictions.lastOrNull()?.predictedUsage ?: historicalDailyUsage
                 if (lastPredictedUsage > floatComparisonThreshold) {
@@ -248,7 +220,6 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
             }
             daysUntilEmptyByModel = if (allPredictedUsageIsZero && currentBalance > floatComparisonThreshold) null else days
 
-
             return PredictionResult(
                 daysUntilEmpty = daysUntilEmptyByModel,
                 predictions = dailyPredictions,
@@ -256,9 +227,11 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
                 error = null
             )
 
-        }finally {
-
+        }catch(e: Exception){
+            Log.e("ElectricityPredictor", "预测异常: ${e.message}", e)
+            return PredictionResult(null, emptyList(), 0.0f, "预测发生异常: ${e.localizedMessage}")
         }
+
     }
 
     private fun calculateHistoricalDailyUsage(records: List<ElectricityRecord>): Double {
@@ -292,8 +265,6 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
     }
 
     fun close() {
-        lstmInterpreter?.close()
-        lstmInterpreter = null
         lrKerasInterpreter?.close()
         lrKerasInterpreter = null
         Log.i("ElectricityPredictor", "All TFLite interpreters closed.")

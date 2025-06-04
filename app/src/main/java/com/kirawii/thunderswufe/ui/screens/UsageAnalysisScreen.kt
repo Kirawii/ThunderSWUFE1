@@ -114,18 +114,12 @@ fun UsageAnalysisScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("模型：")
-                        var modelType by remember { mutableStateOf(ModelType.LSTM) }
+                        var modelType by remember { mutableStateOf(ModelType.LINEAR_REGRESSION_KERAS) }
                         SegmentedButton(
-                            options = listOf("LSTM", "线性回归"),
-                            selected = when (modelType) {
-                                ModelType.LSTM -> "LSTM"
-                                ModelType.LINEAR_REGRESSION_KERAS, ModelType.SIMPLE_LINEAR -> "线性回归"
-                            }
+                            options = listOf("线性回归"),
+                            selected = "线性回归"
                         ) {
-                            modelType = when (it) {
-                                "LSTM" -> ModelType.LSTM
-                                else -> ModelType.LINEAR_REGRESSION_KERAS
-                            }
+                            modelType = ModelType.LINEAR_REGRESSION_KERAS
                             usageAnalysisViewModel.runPrediction(modelType)
                         }
                         Spacer(Modifier.width(16.dp))

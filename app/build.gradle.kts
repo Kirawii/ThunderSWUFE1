@@ -49,6 +49,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        mlModelBinding = true
     }
     androidResources {
         noCompress += "tflite"
@@ -57,6 +58,7 @@ android {
 
 
 dependencies {
+
     // AndroidX 核心依赖
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
@@ -119,10 +121,9 @@ dependencies {
     // TensorFlow Lite - 必要的核心组件
     implementation("org.tensorflow:tensorflow-lite:2.14.0") {
         exclude(group = "org.tensorflow", module = "tensorflow-lite-gpu")
-        exclude(group = "org.tensorflow", module = "tensorflow-lite-select-tf-ops")
     }
     implementation("org.tensorflow:tensorflow-lite-api:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4") {
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.3") {
         exclude(group = "org.tensorflow", module = "tensorflow-lite-metadata")
         exclude(group = "com.google.android.gms", module = "play-services-tasks")
     }

@@ -63,7 +63,7 @@ class HomeViewModel(
             try {
                 val result = predictor.predictFutureUsage(
                     records = records,
-                    modelTypeToUse = com.kirawii.thunderswufe.ml.ModelType.LSTM
+                    modelTypeToUse = com.kirawii.thunderswufe.ml.ModelType.LINEAR_REGRESSION_KERAS
                 )
                 _predictedDays.value = result.daysUntilEmpty
                 _predictionError.value = result.error
