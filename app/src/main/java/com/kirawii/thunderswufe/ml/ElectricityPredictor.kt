@@ -129,13 +129,8 @@ class ElectricityPredictor(private val context: Context) {
         val currentBalance = sortedRecords.last().balance
 
         if (sortedRecords.size < DEFAULT_INPUT_LENGTH) {
-            Log.w("ElectricityPredictor", "历史数据不足 (需要 $DEFAULT_INPUT_LENGTH, 现有 ${sortedRecords.size})，尝试简单预测。")
-            return if (sortedRecords.size >= 2) {
-                val historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords)
-                simpleLinearPrediction(currentBalance, historicalDailyUsage)
-            } else {
-                PredictionResult(null, emptyList(), 0.0f, "历史数据不足以进行任何预测")
-            }
+            Log.w("ElectricityPredictor", "历史数据不足 (需要 $DEFAULT_INPUT_LENGTH, 现有 ${sortedRecords.size})，无法进行预测。")
+            return PredictionResult(null, emptyList(), 0.0f, "历史数据不足以进行任何预测")
         }
 
         val initialRawHistory = sortedRecords
@@ -160,21 +155,18 @@ class ElectricityPredictor(private val context: Context) {
                 modelNameForLog = "Keras LR"
             }
             ModelType.SIMPLE_LINEAR -> {
-                Log.i("ElectricityPredictor", "Using simple linear prediction as requested.")
-                val historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords)
-                return simpleLinearPrediction(currentBalance, historicalDailyUsage)
+                Log.i("ElectricityPredictor", "Simple linear prediction 已被移除。")
+                return PredictionResult(null, emptyList(), 0.0f, "Simple linear prediction 已被移除")
             }
         }
 
         if (activeInterpreter == null) {
-            Log.e("ElectricityPredictor", "$modelNameForLog interpreter is null. Falling back to simple linear prediction.")
-            val historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords)
-            return simpleLinearPrediction(currentBalance, historicalDailyUsage)
+            Log.e("ElectricityPredictor", "$modelNameForLog interpreter is null. 无法进行预测。")
+            return PredictionResult(null, emptyList(), 0.0f, "$modelNameForLog interpreter is null. 无法进行预测。")
         }
         if (scalerScale == null || scalerMin == null){
-            Log.e("ElectricityPredictor", "Scaler params are null. Predictions will be inaccurate. Falling back to simple.")
-            val historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords)
-            return simpleLinearPrediction(currentBalance, historicalDailyUsage)
+            Log.e("ElectricityPredictor", "Scaler params are null. Predictions will be inaccurate. 无法进行预测。")
+            return PredictionResult(null, emptyList(), 0.0f, "Scaler params are null. 无法进行预测。")
         }
 
         val dailyPredictions = mutableListOf<DailyPrediction>()
@@ -217,7 +209,7 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
                 currentScaledHistory.add(scaleUsage(predictedRawUsage.toFloat()))  // 将原始的预测用电量转换为归一化值
 
                 if (tempRemainingBalance <= floatComparisonThreshold) {
-    tempRemainingBalance = 0.0 // 确保为0
+    tempRemainingBalance = 0.0
     break
 }
             }
@@ -264,10 +256,8 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
                 error = null
             )
 
-        } catch (e: Exception) {
-            Log.e("ElectricityPredictor", "Error running TFLite inference with $modelNameForLog: ${e.message}", e)
-            val historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords)
-            return simpleLinearPrediction(currentBalance, historicalDailyUsage, "模型($modelNameForLog)预测失败: ${e.localizedMessage}")
+        }finally {
+
         }
     }
 
@@ -288,50 +278,6 @@ while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 
             sortedForCalc.first().change.toDouble()
         }
         else { 0.0 }
-    }
-
-    private fun simpleLinearPrediction(
-        currentBalance: Double,
-        historicalDailyUsage: Double,
-        customError: String? = null
-    ): PredictionResult {
-        if (historicalDailyUsage <= floatComparisonThreshold && currentBalance > floatComparisonThreshold) {
-            var tempRemainingBalance = currentBalance
-            val dailyPredictions = mutableListOf<DailyPrediction>()
-            var i = 0
-            while (tempRemainingBalance > floatComparisonThreshold) {
-                dailyPredictions.add(DailyPrediction(LocalDateTime.now().plusDays(i.toLong() + 1), 0.0, tempRemainingBalance))
-                i++
-            }
-            return PredictionResult(null, dailyPredictions, 0.5f, customError ?: "日均用电为零但有余额")
-        }
-        if (historicalDailyUsage <= floatComparisonThreshold && currentBalance <= floatComparisonThreshold) {
-            return PredictionResult(0, emptyList(),1.0f, customError)
-        }
-
-        val dailyPredictions = mutableListOf<DailyPrediction>()
-        var tempRemainingBalance = currentBalance
-        val today = LocalDateTime.now()
-        // 预测直到余额为 0 或达到最大预测天数
-        var i = 0
-        while (tempRemainingBalance > floatComparisonThreshold && i < 365) {
-            val predictedUsageForDay = historicalDailyUsage
-            tempRemainingBalance -= predictedUsageForDay
-            if (tempRemainingBalance < 0) tempRemainingBalance = 0.0 // 余额不应为负
-            dailyPredictions.add(DailyPrediction(LocalDateTime.now().plusDays(i.toLong() + 1), max(0.0, predictedUsageForDay), tempRemainingBalance))
-            if (tempRemainingBalance == 0.0) break // 提前耗尽
-            i++
-        }
-        if (dailyPredictions.size < PREDICTION_HORIZON_DAYS && tempRemainingBalance == 0.0) {
-            val today = LocalDateTime.now()
-            for (i in dailyPredictions.size until PREDICTION_HORIZON_DAYS) {
-                dailyPredictions.add(DailyPrediction(today.plusDays(i.toLong() + 1), 0.0, 0.0))
-            }
-        }
-
-
-        val daysUntilEmpty = if (historicalDailyUsage > floatComparisonThreshold) (currentBalance / historicalDailyUsage).toInt() else null
-        return PredictionResult(daysUntilEmpty, dailyPredictions, 0.7f, customError)
     }
 
     private fun calculateConfidence(modelPredictions: List<DailyPrediction>, historicalDailyUsage: Double): Float {
