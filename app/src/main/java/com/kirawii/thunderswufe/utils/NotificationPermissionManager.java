@@ -1,12 +1,14 @@
 package com.kirawii.thunderswufe.utils;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.core.content.ContextCompat;
 
+@SuppressLint("InlinedApi")
 public class NotificationPermissionManager {
     private final Activity activity;
     private ActivityResultLauncher<String> permissionLauncher;
@@ -48,4 +50,4 @@ public class NotificationPermissionManager {
     private void showPermissionRationaleDialog(Runnable onGranted, Runnable onDenied) {
         if (permissionLauncher != null) permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
     }
-} 
+}

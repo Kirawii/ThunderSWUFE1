@@ -2,11 +2,12 @@ package com.kirawii.thunderswufe.data.database;
 
 import androidx.room.Entity;
 import androidx.room.PrimaryKey;
+import androidx.room.Ignore;
 import java.time.LocalDateTime;
 
 @Entity(
     tableName = "electricity_records",
-    indices = {@androidx.room.Index(value = {"timestamp", "roomNo"}, unique = true)}
+    indices = {@androidx.room.Index(value = {"roomNo", "timestamp"}, unique = true)}
 )
 public class ElectricityRecord {
     @PrimaryKey(autoGenerate = true)
@@ -16,6 +17,7 @@ public class ElectricityRecord {
     private double change;
     private String roomNo;
 
+    @Ignore
     public ElectricityRecord() {}
 
     public ElectricityRecord(long id, LocalDateTime timestamp, double balance, double change, String roomNo) {

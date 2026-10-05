@@ -13,10 +13,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import com.kirawii.thunderswufe.data.preferences.UserPreferencesManager
 import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModel
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class UsageAnalysisViewModel(
     application: Application,
     private val settingsViewModel: SettingsViewModel
@@ -37,11 +42,11 @@ class UsageAnalysisViewModel(
 
     init {
         viewModelScope.launch {
-            settingsViewModel.roomNoFlow.collect { roomNo ->
-                electricityDao.getAllRecordsByRoom(roomNo).collect { records ->
+            settingsViewModel.roomNoFlow
+                .flatMapLatest { roomNo -> electricityDao.getAllRecordsByRoom(roomNo) }
+                .collect { records ->
                     _historicalRecords.value = records
                 }
-            }
         }
     }
 
@@ -55,10 +60,9 @@ class UsageAnalysisViewModel(
             _isLoadingPrediction.value = true
             _predictionResult.value = null
             try {
-                val result = predictor.predictFutureUsage(
-                    records = _historicalRecords.value,
-                    modelTypeToUse = modelType
-                )
+                val result = withContext(Dispatchers.Default) {
+                    predictor.predictFutureUsage(_historicalRecords.value, modelType)
+                }
                 _predictionResult.value = result
             } catch (e: Exception) {
                 Log.e("UsageAnalysisVM", "Error running prediction with $modelType: ${e.message}", e)
@@ -73,4 +77,4 @@ class UsageAnalysisViewModel(
         super.onCleared()
         Log.d("UsageAnalysisVM", "ViewModel cleared.")
     }
-} 
+}

@@ -1,285 +1,92 @@
 package com.kirawii.thunderswufe.ml
 
 import android.content.Context
-import android.util.Log
 import com.kirawii.thunderswufe.data.database.ElectricityRecord
-import org.json.JSONObject
-import org.tensorflow.lite.Interpreter
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
-import kotlin.math.max
+import kotlin.math.ceil
 
-enum class ModelType {
-    LINEAR_REGRESSION_KERAS,
-    SIMPLE_LINEAR
-}
+enum class ModelType { PREVIOUS_DAY, EXPONENTIAL_SMOOTHING }
 
-class ElectricityPredictor(private val context: Context) {
-    private var lrKerasInterpreter: Interpreter? = null
-
-    // 模型文件名常量
+/** Causal, device-local forecasting; no private training data or stale fitted model is shipped. */
+class ElectricityPredictor {
     companion object {
-        private const val LR_KERAS_MODEL_FILE = "linear_regression_keras.tflite"
-        private const val SCALER_PARAMS_FILE = "scaler_params.json"
-        private const val DEFAULT_INPUT_LENGTH = 7
-        private const val MODEL_OUTPUT_STEPS = 1
-        private const val PREDICTION_HORIZON_DAYS = 7
+        private const val MIN_HISTORY_DAYS = 3
+        private const val MAX_FORECAST_DAYS = 365
+        private const val ALPHA = 0.8
+        private const val EPSILON = 1e-6
     }
 
-    private var scalerScale: FloatArray? = null
-    private var scalerMin: FloatArray? = null
-
-    private val floatComparisonThreshold = 1e-6f
-
-    init {
-        loadAllModelsAndParams()
-    }
-
-    private fun loadAllModelsAndParams() {
-        lrKerasInterpreter = loadTFLiteModel(LR_KERAS_MODEL_FILE)
-        if (lrKerasInterpreter != null) {
-            Log.i("ElectricityPredictor", "Keras Linear Regression model '$LR_KERAS_MODEL_FILE' loaded successfully.")
-        } else {
-            Log.e("ElectricityPredictor", "Failed to load Keras Linear Regression model '$LR_KERAS_MODEL_FILE'.")
-        }
-
-        loadScalerParams(SCALER_PARAMS_FILE)
-        if (scalerScale == null || scalerMin == null) {
-            Log.e("ElectricityPredictor", "Failed to load scaler parameters from '$SCALER_PARAMS_FILE'. Predictions might be inaccurate.")
-        }
-    }
-
-    private fun loadTFLiteModel(modelFileName: String): Interpreter? {
-        return try {
-            context.assets.open(modelFileName).use { inputStream ->
-                val bytes = inputStream.readBytes()
-                val byteBuffer = ByteBuffer.allocateDirect(bytes.size)
-                byteBuffer.order(ByteOrder.nativeOrder())
-                byteBuffer.put(bytes)
-                byteBuffer.rewind()
-                Interpreter(byteBuffer)
-            }
-        } catch (e: Exception) {
-            Log.e("ElectricityPredictor", "TFLite模型 '$modelFileName' 加载失败：${e.message}", e)
-            null
-        }
-    }
-
-    private fun loadScalerParams(fileName: String) {
-        try {
-            val jsonString = context.assets.open(fileName).bufferedReader().use { it.readText() }
-            val jsonObject = JSONObject(jsonString)
-            val scaleJsonArray = jsonObject.getJSONArray("scale_")
-            val minJsonArray = jsonObject.getJSONArray("min_")
-
-            scalerScale = FloatArray(scaleJsonArray.length()) { i -> scaleJsonArray.getDouble(i).toFloat() }
-            scalerMin = FloatArray(minJsonArray.length()) { i -> minJsonArray.getDouble(i).toFloat() }
-            Log.i("ElectricityPredictor", "Scaler params loaded: scale=${scalerScale?.contentToString()}, min=${scalerMin?.contentToString()}")
-
-        } catch (e: Exception) {
-            Log.e("ElectricityPredictor", "Error loading scaler params '$fileName': ${e.message}", e)
-            scalerScale = null
-            scalerMin = null
-        }
-    }
-
-    private fun scaleUsage(rawValue: Float): Float {
-        if (scalerScale == null || scalerMin == null || scalerScale!!.isEmpty()) {
-            Log.w("ElectricityPredictor", "Scaler not initialized, returning raw value for scaling.")
-            return rawValue
-        }
-        return rawValue * scalerScale!![0] + scalerMin!![0]
-    }
-
-    private fun inverseScaleUsage(scaledValue: Float): Float {
-        if (scalerScale == null || scalerMin == null || scalerScale!!.isEmpty() || scalerScale!![0] == 0f) {
-            Log.w("ElectricityPredictor", "Scaler not initialized or scale is zero, returning scaled value for inverse scaling.")
-            return scaledValue
-        }
-        return (scaledValue - scalerMin!![0]) / scalerScale!![0]
-    }
+    constructor(@Suppress("UNUSED_PARAMETER") context: Context)
+    internal constructor(@Suppress("UNUSED_PARAMETER") modelJson: String?)
 
     fun predictFutureUsage(
         records: List<ElectricityRecord>,
-        modelTypeToUse: ModelType = ModelType.LINEAR_REGRESSION_KERAS
+        modelTypeToUse: ModelType = ModelType.PREVIOUS_DAY
     ): PredictionResult {
-        if (records.isEmpty()) {
-            return PredictionResult(null, emptyList(), 0.0f, "没有历史数据")
+        if (records.isEmpty()) return PredictionResult(null, emptyList(), 0f, "没有历史数据")
+        val sorted = records.sortedBy { it.timestamp }
+        val today = LocalDateTime.now().toLocalDate()
+        val dailyUsage = sorted.groupBy { it.timestamp.toLocalDate() }.toSortedMap()
+            .filterKeys { it.isBefore(today) }.values
+            .map { rows -> rows.sumOf { it.change.coerceAtLeast(0.0) } }
+        if (dailyUsage.size < MIN_HISTORY_DAYS) {
+            return PredictionResult(null, emptyList(), 0f,
+                "至少需要 $MIN_HISTORY_DAYS 天历史数据，当前只有 ${dailyUsage.size} 天")
         }
 
-        val sortedRecords = records.sortedBy { it.timestamp }
-        val currentBalance = sortedRecords.last().balance
-
-        if (sortedRecords.size < DEFAULT_INPUT_LENGTH) {
-            Log.w("ElectricityPredictor", "历史数据不足 (需要 $DEFAULT_INPUT_LENGTH, 现有 ${sortedRecords.size})，无法进行预测。")
-            return PredictionResult(null, emptyList(), 0.0f, "历史数据不足以进行任何预测")
+        val history = dailyUsage.takeLast(14).toMutableList()
+        val upperBound = robustUpperBound(history)
+        var remaining = sorted.last().balance.coerceAtLeast(0.0)
+        val forecasts = mutableListOf<DailyPrediction>()
+        repeat(MAX_FORECAST_DAYS) { offset ->
+            if (remaining <= EPSILON) return@repeat
+            val usage = forecast(history, modelTypeToUse).coerceIn(0.0, upperBound)
+            remaining = (remaining - usage).coerceAtLeast(0.0)
+            forecasts += DailyPrediction(today.plusDays(offset.toLong() + 1).atStartOfDay(), usage, remaining)
+            history += usage
+            if (history.size > 14) history.removeAt(0)
         }
-
-        val initialRawHistory = sortedRecords
-            .takeLast(DEFAULT_INPUT_LENGTH)
-            .map { it.change.toFloat() }
-
-        if (initialRawHistory.size < DEFAULT_INPUT_LENGTH) {
-            Log.e("ElectricityPredictor", "Logic error: Not enough data for initial history after filtering.")
-            return PredictionResult(null, emptyList(), 0.0f, "内部错误：准备历史数据失败")
+        val average = forecasts.map { it.predictedUsage }.filter { it > EPSILON }
+            .takeIf { it.isNotEmpty() }?.average()
+        val daysUntilEmpty = when {
+            sorted.last().balance <= EPSILON -> 0
+            remaining <= EPSILON -> forecasts.indexOfFirst { it.remainingBalance <= EPSILON } + 1
+            average != null -> ceil(sorted.last().balance / average).toInt()
+            else -> null
         }
-        val initialScaledHistory = initialRawHistory.map { scaleUsage(it) }.toMutableList()
-
-        val activeInterpreter = lrKerasInterpreter
-        val modelNameForLog = "Keras LR"
-
-        if (activeInterpreter == null) {
-            val modelFileName = LR_KERAS_MODEL_FILE
-            Log.e("ElectricityPredictor", "$modelNameForLog interpreter is null. 无法进行预测。请检查 assets 目录下的 $modelFileName 是否存在且为有效 TFLite 模型。")
-            return PredictionResult(null, emptyList(), 0.0f, "$modelNameForLog interpreter is null. 无法进行预测。请检查 assets 目录下的 $modelFileName 是否存在且为有效 TFLite 模型。")
-        }
-        if (scalerScale == null || scalerMin == null){
-            Log.e("ElectricityPredictor", "Scaler params are null. Predictions will be inaccurate. 无法进行预测。")
-            return PredictionResult(null, emptyList(), 0.0f, "Scaler params are null. 无法进行预测。")
-        }
-
-        val dailyPredictions = mutableListOf<DailyPrediction>()
-        var tempRemainingBalance = currentBalance
-        val today = LocalDateTime.now()
-        var currentScaledHistory = initialScaledHistory.toMutableList() // 可变副本
-
-        try {
-            var dayOffset = 0
-            while (tempRemainingBalance > floatComparisonThreshold && dayOffset < 365) { // 最多预测一年，防止死循环
-                if (currentScaledHistory.size < DEFAULT_INPUT_LENGTH) {
-                    Log.e("ElectricityPredictor", "History size became less than $DEFAULT_INPUT_LENGTH during prediction loop.")
-                    break // Should not happen
-                }
-                // 准备模型输入
-                val inputBuffer = ByteBuffer.allocateDirect(DEFAULT_INPUT_LENGTH * Float.SIZE_BYTES)
-                    .order(ByteOrder.nativeOrder())
-                currentScaledHistory.forEach { inputBuffer.putFloat(it) }
-                inputBuffer.rewind()
-
-                val outputBuffer = ByteBuffer.allocateDirect(MODEL_OUTPUT_STEPS * Float.SIZE_BYTES)
-                    .order(ByteOrder.nativeOrder())
-
-                activeInterpreter.run(inputBuffer, outputBuffer)
-                outputBuffer.rewind()
-
-                val predictedScaledUsage = outputBuffer.float // 只取一个 float
-                val predictedRawUsage = inverseScaleUsage(predictedScaledUsage)
-
-                tempRemainingBalance -= predictedRawUsage
-                dailyPredictions.add(
-                    DailyPrediction(
-                        date = today.plusDays(dayOffset.toLong() + 1),
-                        predictedUsage = max(0.0f, predictedRawUsage).toDouble(),
-                        remainingBalance = tempRemainingBalance
-                    )
-                )
-                // 更新预测输入，移除最早的记录，添加新的预测结果
-                currentScaledHistory.removeAt(0)
-                currentScaledHistory.add(scaleUsage(predictedRawUsage.toFloat()))
-
-                if (tempRemainingBalance <= floatComparisonThreshold) {
-                    tempRemainingBalance = 0.0
-                    break
-                }
-                dayOffset += 1 // 每次只步进一天
-
-            }
-
-            val historicalDailyUsage = calculateHistoricalDailyUsage(sortedRecords) // 用于置信度和可能的耗尽估算
-            var daysUntilEmptyByModel: Int? = null
-            var balanceForDaysCalc = currentBalance
-            var days = 0
-            var allPredictedUsageIsZero = true
-            for (prediction in dailyPredictions) {
-                if (prediction.predictedUsage > floatComparisonThreshold) {
-                    allPredictedUsageIsZero = false
-                }
-                if (balanceForDaysCalc >= prediction.predictedUsage) {
-                    balanceForDaysCalc -= prediction.predictedUsage
-                    days++
-                } else {
-                    if (prediction.predictedUsage > floatComparisonThreshold) {
-                        days += (balanceForDaysCalc / prediction.predictedUsage).toInt()
-                    }
-                    balanceForDaysCalc = 0.0
-                    break
-                }
-            }
-
-            if (days == dailyPredictions.size && balanceForDaysCalc > floatComparisonThreshold) {
-                val lastPredictedUsage = dailyPredictions.lastOrNull()?.predictedUsage ?: historicalDailyUsage
-                if (lastPredictedUsage > floatComparisonThreshold) {
-                    days += (balanceForDaysCalc / lastPredictedUsage).toInt()
-                } else if (historicalDailyUsage > floatComparisonThreshold){
-                    days += (balanceForDaysCalc / historicalDailyUsage).toInt()
-                } else {
-
-                }
-            }
-            daysUntilEmptyByModel = if (allPredictedUsageIsZero && currentBalance > floatComparisonThreshold) null else days
-
-            return PredictionResult(
-                daysUntilEmpty = daysUntilEmptyByModel,
-                predictions = dailyPredictions,
-                confidence = calculateConfidence(dailyPredictions, historicalDailyUsage),
-                error = null
-            )
-
-        }catch(e: Exception){
-            Log.e("ElectricityPredictor", "预测异常: ${e.message}", e)
-            return PredictionResult(null, emptyList(), 0.0f, "预测发生异常: ${e.localizedMessage}")
-        }
-
+        return PredictionResult(daysUntilEmpty, forecasts,
+            backtestReliability(dailyUsage, modelTypeToUse), null)
     }
 
-    private fun calculateHistoricalDailyUsage(records: List<ElectricityRecord>): Double {
-        if (records.size < 2) return 0.0
-        val sortedForCalc = if (records.first().timestamp.isAfter(records.last().timestamp)) {
-            records.sortedBy { it.timestamp }
-        } else { records }
-
-        val totalNetUsage = sortedForCalc.map { it.change }.sum().toDouble()
-        val firstTimestamp = sortedForCalc.first().timestamp
-        val lastTimestamp = sortedForCalc.last().timestamp
-        val daysBetween = ChronoUnit.DAYS.between(firstTimestamp, lastTimestamp).toDouble()
-
-        return if (daysBetween > 0 && totalNetUsage > 0) {
-            totalNetUsage / daysBetween
-        } else if (sortedForCalc.size == 1 && sortedForCalc.first().change > 0) {
-            sortedForCalc.first().change.toDouble()
+    private fun forecast(history: List<Double>, type: ModelType): Double = when (type) {
+        ModelType.PREVIOUS_DAY -> history.last()
+        ModelType.EXPONENTIAL_SMOOTHING -> {
+            var estimate = history.first()
+            history.drop(1).forEach { estimate = ALPHA * it + (1.0 - ALPHA) * estimate }
+            estimate
         }
-        else { 0.0 }
     }
 
-    private fun calculateConfidence(modelPredictions: List<DailyPrediction>, historicalDailyUsage: Double): Float {
-        if (modelPredictions.isEmpty()) return 0.0f
-        val avgModelPredictedUsage = modelPredictions.map { it.predictedUsage }.average()
-        if (historicalDailyUsage <= floatComparisonThreshold) {
-            return if (kotlin.math.abs(avgModelPredictedUsage) <= floatComparisonThreshold) 0.9f else 0.1f
-        }
-        val difference = kotlin.math.abs(avgModelPredictedUsage - historicalDailyUsage)
-        val normalizedDifference = difference / historicalDailyUsage
-        return (1.0f - normalizedDifference.toFloat()).coerceIn(0.0f, 1.0f)
+    private fun backtestReliability(values: List<Double>, type: ModelType): Float {
+        if (values.size < MIN_HISTORY_DAYS + 1) return 0f
+        val errors = (MIN_HISTORY_DAYS until values.size).map { index ->
+            kotlin.math.abs(values[index] - forecast(values.subList(0, index).takeLast(14), type))
+        }.takeLast(28)
+        val scale = values.takeLast(28).average().coerceAtLeast(EPSILON)
+        return (1.0 - errors.average() / scale).coerceIn(0.0, 1.0).toFloat()
     }
 
-    fun close() {
-        lrKerasInterpreter?.close()
-        lrKerasInterpreter = null
-        Log.i("ElectricityPredictor", "All TFLite interpreters closed.")
+    private fun robustUpperBound(values: List<Double>): Double {
+        val sorted = values.sorted()
+        val median = sorted[sorted.size / 2]
+        val deviations = values.map { kotlin.math.abs(it - median) }.sorted()
+        val mad = deviations[deviations.size / 2]
+        return (median + 6.0 * mad).coerceAtLeast(values.maxOrNull() ?: 1.0).coerceAtLeast(1.0)
     }
 }
 
-data class PredictionResult(
-    val daysUntilEmpty: Int?,
-    val predictions: List<DailyPrediction>,
-    val confidence: Float,
-    val error: String?
-)
+data class PredictionResult(val daysUntilEmpty: Int?, val predictions: List<DailyPrediction>,
+    /** Recent causal backtest score; a stability indicator, not a confidence interval. */
+    val confidence: Float, val error: String?)
 
-data class DailyPrediction(
-    val date: LocalDateTime,
-    val predictedUsage: Double,
-    val remainingBalance: Double
-)
+data class DailyPrediction(val date: LocalDateTime, val predictedUsage: Double, val remainingBalance: Double)

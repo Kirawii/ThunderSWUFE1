@@ -10,13 +10,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.kirawii.thunderswufe.navigation.NavGraph
 import com.kirawii.thunderswufe.ui.theme.ThunderSWUFETheme
 import com.kirawii.thunderswufe.utils.NotificationPermissionManager
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var notificationPermissionManager: NotificationPermissionManager
@@ -24,27 +21,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        val app = application as ThunderApplication
-
         notificationPermissionManager = NotificationPermissionManager(this)
         notificationPermissionManager.registerPermissionLauncher(
             registerForActivityResult(
                 ActivityResultContracts.RequestPermission()
-            ) { isGranted ->
-                if (isGranted) {
-                    startBackgroundServices()
-                } else {
-                    showPermissionDeniedMessage()
-                }
-            }
+            ) { }
         )
 
         checkNotificationPermission()
 
-        val roomInfo = app.userPreferencesManager.getRoomInfo()
-        if (roomInfo.roomNo.isEmpty()) {
-        }
-        
         enableEdgeToEdge()
         setContent {
             ThunderSWUFETheme {
@@ -61,16 +46,8 @@ class MainActivity : ComponentActivity() {
     
     private fun checkNotificationPermission() {
         notificationPermissionManager.checkAndRequestPermission(
-            Runnable { startBackgroundServices() },
-            Runnable { showPermissionDeniedMessage() }
+            Runnable { },
+            Runnable { }
         )
-    }
-    
-    private fun startBackgroundServices() {
-        val app = application as ThunderApplication
-        app.startBackgroundServices()
-    }
-    
-    private fun showPermissionDeniedMessage() {
     }
 }

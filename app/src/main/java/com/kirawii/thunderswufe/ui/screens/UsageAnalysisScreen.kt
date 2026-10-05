@@ -14,7 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -29,12 +29,8 @@ import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModel
 import com.kirawii.thunderswufe.ui.viewmodels.SettingsViewModelFactory
 import com.kirawii.thunderswufe.ui.viewmodels.UsageAnalysisViewModelFactory
 import com.kirawii.thunderswufe.ml.ModelType
-import com.patrykandpatrick.vico.compose.axis.horizontal.bottomAxis
-import com.patrykandpatrick.vico.compose.axis.vertical.startAxis
-import com.patrykandpatrick.vico.compose.chart.Chart
-import com.patrykandpatrick.vico.compose.chart.line.lineChart
-import com.patrykandpatrick.vico.core.entry.entryModelOf
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun UsageAnalysisScreen(
@@ -61,8 +57,10 @@ fun UsageAnalysisScreen(
         val seen = mutableSetOf<java.time.LocalDateTime>()
         historicalRecords.filter { seen.add(it.timestamp) }
     }
-    val chartData = remember(filteredRecords) { filteredRecords.map { it.balance }.reversed() }
-    val labels = remember(filteredRecords) { filteredRecords.map { it.timestamp.toLocalDate().toString() }.reversed() }
+    val dailyHistory = remember(filteredRecords) {
+        filteredRecords.sortedBy { it.timestamp }.groupBy { it.timestamp.toLocalDate() }
+            .toSortedMap().entries.toList().takeLast(30)
+    }
 
     val anomalies = remember(filteredRecords) {
         ElectricityAnalyzer.analyzeUsagePattern(filteredRecords)
@@ -77,10 +75,10 @@ fun UsageAnalysisScreen(
         val max = filteredRecords.maxByOrNull { it.change }?.change ?: 0.0
         val min = filteredRecords.minByOrNull { it.change }?.change ?: 0.0
         mapOf(
-            "总用电量(度)" to String.format("%.2f", total),
-            "平均用电量(度)" to String.format("%.2f", avg),
-            "最大单次用电量(度)" to String.format("%.2f", max),
-            "最小单次用电量(度)" to String.format("%.2f", min)
+            "总用电量(度)" to String.format(Locale.CHINA, "%.2f", total),
+            "平均用电量(度)" to String.format(Locale.CHINA, "%.2f", avg),
+            "最大单次用电量(度)" to String.format(Locale.CHINA, "%.2f", max),
+            "最小单次用电量(度)" to String.format(Locale.CHINA, "%.2f", min)
         )
     }
 
@@ -94,7 +92,7 @@ fun UsageAnalysisScreen(
             if (onBack != null) {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { onBack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                     Text("详细用电分析", style = MaterialTheme.typography.titleLarge)
                 }
@@ -103,26 +101,35 @@ fun UsageAnalysisScreen(
         }
 
         item {
-            Card {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("历史电量", style = MaterialTheme.typography.titleLarge)
+                    EnergyChart(dailyHistory.map { it.value.last().balance },
+                        dailyHistory.map { it.key.format(DateTimeFormatter.ofPattern("MM/dd")) }, "每日最后记录")
+                }
+            }
+        }
+
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
                     Text(
-                        text = "用电预测 (ML)",
+                        text = "每日用电预测",
                         style = MaterialTheme.typography.titleMedium
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("模型：")
-                        var modelType by remember { mutableStateOf(ModelType.LINEAR_REGRESSION_KERAS) }
+                        var modelType by remember { mutableStateOf(ModelType.PREVIOUS_DAY) }
                         SegmentedButton(
-                            options = listOf("线性回归"),
-                            selected = "线性回归"
-                        ) {
-                            modelType = ModelType.LINEAR_REGRESSION_KERAS
+                            options = listOf("昨日用量", "指数平滑"),
+                            selected = if (modelType == ModelType.PREVIOUS_DAY) "昨日用量" else "指数平滑"
+                        ) { selected ->
+                            modelType = if (selected == "昨日用量") ModelType.PREVIOUS_DAY else ModelType.EXPONENTIAL_SMOOTHING
                             usageAnalysisViewModel.runPrediction(modelType)
                         }
-                        Spacer(Modifier.width(16.dp))
+                        Spacer(Modifier.weight(1f))
                         IconButton(
                             onClick = { usageAnalysisViewModel.runPrediction(modelType) },
                             modifier = Modifier.size(44.dp)
@@ -144,32 +151,20 @@ fun UsageAnalysisScreen(
                         predictionResult?.predictions?.isNotEmpty() == true -> {
                             var predYType by remember { mutableStateOf("余额") }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Y轴：")
                                 SegmentedButton(options = listOf("余额", "用电量"), selected = predYType) { predYType = it }
                             }
-                            val predList = predictionResult!!.predictions
+                            val predList = predictionResult!!.predictions.take(30)
                             val yValues = when (predYType) {
                                 "余额" -> predList.map { it.remainingBalance }
                                 else -> predList.map { it.predictedUsage }
                             }
                             val xLabels = predList.map { it.date.format(DateTimeFormatter.ofPattern("MM-dd")) }
-                            val labelStep = if (xLabels.size > 7) xLabels.size / 7 else 1
-                            Chart(
-                                chart = lineChart(),
-                                model = entryModelOf(*yValues.toTypedArray()),
-                                startAxis = startAxis(),
-                                bottomAxis = bottomAxis(
-                                    valueFormatter = { x, _ ->
-                                        val idx = x.toInt().coerceIn(0, xLabels.lastIndex)
-                                        if (labelStep == 1 || idx % labelStep == 0 || idx == xLabels.lastIndex) xLabels.getOrElse(idx) { "" } else ""
-                                    }
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp)
+                            EnergyChart(yValues, xLabels, if (predYType == "余额") "预测剩余电量" else "预测每日用电", forecast = true)
+                            Text("展示未来最多 30 天", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "近期历史回测稳定度: ${String.format(Locale.CHINA, "%.0f%%", predictionResult!!.confidence * 100)}",
+                                style = MaterialTheme.typography.bodySmall
                             )
-                            Text("Y轴：${if (predYType == "余额") "预测剩余电量(元)" else "预测每日用电量(度)"}", style = MaterialTheme.typography.bodySmall)
-                            Text("置信度: ${String.format("%.2f", predictionResult!!.confidence)}", style = MaterialTheme.typography.bodySmall)
                         }
                         !predictionResult?.error.isNullOrBlank() -> {
                             Text("预测失败: ${predictionResult?.error}", color = MaterialTheme.colorScheme.error)
@@ -182,11 +177,17 @@ fun UsageAnalysisScreen(
             }
         }
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                stats.forEach { (k, v) ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(k, style = MaterialTheme.typography.bodySmall)
-                        Text(v, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                stats.entries.toList().chunked(2).forEach { pair ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        pair.forEach { (k, v) ->
+                            Card(Modifier.weight(1f)) {
+                                Column(Modifier.padding(16.dp)) {
+                                    Text(k, style = MaterialTheme.typography.labelMedium)
+                                    Text(v, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -255,7 +256,7 @@ fun UsageAnalysisScreen(
                     Text(selectedAnomaly?.message ?: "")
                     Text("发生时间：" + selectedAnomaly?.timestamp?.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")))
                     Text("类型：" + (selectedAnomaly?.type?.name ?: ""))
-                    Text("数值：" + String.format("%.2f", selectedAnomaly?.value ?: 0.0))
+                    Text("数值：" + String.format(Locale.CHINA, "%.2f", selectedAnomaly?.value ?: 0.0))
                 }
             },
             confirmButton = {
@@ -301,16 +302,5 @@ private fun AnomalyItem(
 
 @Composable
 private fun SegmentedButton(options: List<String>, selected: String, onSelect: (String) -> Unit) {
-    Row {
-        options.forEach { option ->
-            Button(
-                onClick = { onSelect(option) },
-                colors = if (option == selected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                else ButtonDefaults.buttonColors()
-            ) {
-                Text(option)
-            }
-            Spacer(Modifier.width(4.dp))
-        }
-    }
+    EnergyChips(options, selected, onSelect)
 }

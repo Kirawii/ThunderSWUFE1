@@ -22,9 +22,15 @@ public interface ElectricityDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertRecord(ElectricityRecord record);
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    List<Long> insertRecords(List<ElectricityRecord> records);
+
     @Query("SELECT * FROM electricity_records ORDER BY timestamp DESC LIMIT 1")
     ElectricityRecord getLatestRecord();
 
     @Query("SELECT * FROM electricity_records WHERE roomNo = :roomNo ORDER BY timestamp DESC LIMIT 1")
     ElectricityRecord getLatestRecordByRoom(String roomNo);
+
+    @Query("DELETE FROM electricity_records WHERE roomNo = :roomNo")
+    void deleteRecordsByRoom(String roomNo);
 }

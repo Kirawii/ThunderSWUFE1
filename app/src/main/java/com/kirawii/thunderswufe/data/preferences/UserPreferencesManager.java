@@ -9,13 +9,16 @@ public class UserPreferencesManager {
     private static final String KEY_ROOM_NO = "room_no";
     private static final String KEY_BUILDING_NO = "building_no";
     private static final String KEY_AREA_NO = "area_no";
-    private static final String KEY_AUTH_TOKEN = "auth_token";
     private static final String KEY_NOTIFICATION_ENABLED = "notification_enabled";
 
     private final SharedPreferences prefs;
+    private final SecureTokenStore tokenStore;
 
     public UserPreferencesManager(Context context) {
         this.prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        this.tokenStore = new SecureTokenStore(context);
+        // Purge the legacy plaintext token when upgrading from an older build.
+        this.prefs.edit().remove("auth_token").apply();
     }
 
     public double getLowBalanceThreshold() {
@@ -43,11 +46,11 @@ public class UserPreferencesManager {
     }
 
     public String getAuthToken() {
-        return prefs.getString(KEY_AUTH_TOKEN, "");
+        return tokenStore.read();
     }
 
     public void setAuthToken(String token) {
-        prefs.edit().putString(KEY_AUTH_TOKEN, token).apply();
+        tokenStore.write(token);
     }
 
     public boolean isNotificationEnabled() {
@@ -59,11 +62,6 @@ public class UserPreferencesManager {
     }
 
     public void initializeDefaultsIfNeeded() {
-        if (prefs.getString(KEY_ROOM_NO, null) == null) {
-            setRoomInfo(new RoomInfo("XYYB-604", "信园B座", "信园"));
-        }
-        if (prefs.getString(KEY_AUTH_TOKEN, null) == null) {
-            setAuthToken("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMTEiLCJhY2NOdW0iOiIxMzEzMTciLCJwZXJDb2RlIjoiMTExIiwiZXhwIjoxNzc5MTAyOTA0LCJpYXQiOjE3NDc1NjY5MDQsImp0aSI6IjAwZmM3NDFjLTQ1ZmUtNDk0OC1iOWY1LTIyOGM3YzJlMmZlYiJ9.tpk_DTtgWDZogMse-rQWsfdK1GxV92ao-r_qFmHUjYo");
-        }
+        // Intentionally no personal defaults. Users must provide their own room and session.
     }
 }

@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.HashSet;
+import java.util.Locale;
 
 public class ElectricityAnalyzer {
     private static final double SUDDEN_CHANGE_THRESHOLD = 5.0;
@@ -32,14 +33,15 @@ public class ElectricityAnalyzer {
                         AnomalyType.SUDDEN_CHANGE,
                         current.getTimestamp(),
                         hourlyChange,
-                        String.format("检测到用电量突然变化：%.2f度/小时", hourlyChange)
+                        String.format(Locale.CHINA, "检测到用电量突然变化：%.2f度/小时", hourlyChange)
                 ));
             }
         }
 
         List<ElectricityRecord> recentRecords = new ArrayList<>();
         for (ElectricityRecord record : sortedRecords) {
-            if (ChronoUnit.DAYS.between(record.getTimestamp(), LocalDateTime.now()) <= ANALYSIS_WINDOW_DAYS) {
+            long ageDays = ChronoUnit.DAYS.between(record.getTimestamp(), LocalDateTime.now());
+            if (ageDays >= 0 && ageDays <= ANALYSIS_WINDOW_DAYS) {
                 recentRecords.add(record);
             }
         }
@@ -53,41 +55,24 @@ public class ElectricityAnalyzer {
         }
         if (uniqueRecords.size() >= 2) {
             double totalChange = 0.0;
-            StringBuilder sb = new StringBuilder();
-            sb.append("[ElectricityAnalyzer] recentRecords for daily average calculation:\n");
             for (ElectricityRecord record : uniqueRecords) {
                 totalChange += record.getChange();
-                sb.append(record.getTimestamp()).append(", change=").append(record.getChange()).append("\n");
             }
             double days = ChronoUnit.DAYS.between(
                     uniqueRecords.get(uniqueRecords.size() - 1).getTimestamp(),
                     uniqueRecords.get(0).getTimestamp()
             );
-            sb.append("totalChange=").append(totalChange).append(", days=").append(days).append("\n");
             if (days > 0) {
                 double dailyAverage = Math.abs(totalChange) / days;
-                sb.append("dailyAverage=").append(dailyAverage);
-                android.util.Log.d("ElectricityAnalyzer", sb.toString());
                 if (dailyAverage > HIGH_USAGE_THRESHOLD) {
                     anomalies.add(new UsageAnomaly(
                             AnomalyType.HIGH_USAGE,
                             LocalDateTime.now(),
                             dailyAverage,
-                            String.format("近期用电量较高：平均%.2f度/天", dailyAverage)
+                            String.format(Locale.CHINA, "近期用电量较高：平均%.2f度/天", dailyAverage)
                     ));
                 }
-            } else {
-                android.util.Log.d("ElectricityAnalyzer", sb.toString());
             }
-        }
-        // 如果没有异常，添加NORMAL类型
-        if (anomalies.isEmpty()) {
-            anomalies.add(new UsageAnomaly(
-                AnomalyType.NORMAL,
-                LocalDateTime.now(),
-                0.0,
-                "用电一切正常，感谢您的绿色生活方式，继续保持！"
-            ));
         }
         return anomalies;
     }
@@ -143,4 +128,4 @@ public class ElectricityAnalyzer {
         public double getValue() { return value; }
         public String getMessage() { return message; }
     }
-} 
+}

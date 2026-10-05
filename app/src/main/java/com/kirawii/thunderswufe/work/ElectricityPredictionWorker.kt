@@ -23,7 +23,9 @@ class ElectricityPredictionWorker(
     
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         return@withContext try {
-            val records = app.database.electricityDao().getAllRecords().first()
+            val roomNo = app.userPreferencesManager.roomInfo.roomNo
+            if (roomNo.isBlank()) return@withContext Result.failure()
+            val records = app.database.electricityDao().getAllRecordsByRoom(roomNo).first()
 
             val predictionResult = app.electricityPredictor.predictFutureUsage(records)
             
@@ -51,7 +53,7 @@ class ElectricityPredictionWorker(
 
             Result.success()
         } catch (e: Exception) {
-            Result.failure()
+            Result.retry()
         }
     }
-} 
+}

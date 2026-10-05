@@ -17,7 +17,8 @@ data class SettingsUiState(
     val roomNo: String = "",
     val buildingNo: String = "",
     val areaNo: String = "",
-    val notificationEnabled: Boolean = true
+    val notificationEnabled: Boolean = true,
+    val hasAuthToken: Boolean = false
 )
 
 class SettingsViewModel(
@@ -43,12 +44,13 @@ class SettingsViewModel(
             roomNo = roomInfo.roomNo,
             buildingNo = roomInfo.buildingNo,
             areaNo = roomInfo.areaNo,
-            notificationEnabled = notificationEnabled
+            notificationEnabled = notificationEnabled,
+            hasAuthToken = userPreferencesManager.authToken.isNotBlank()
         )
     }
 
     fun updateThreshold(newThreshold: String) {
-        userPreferencesManager.setLowBalanceThreshold(newThreshold.toDoubleOrNull() ?: 10.0)
+        userPreferencesManager.setLowBalanceThreshold((newThreshold.toDoubleOrNull() ?: 10.0).coerceAtLeast(0.0))
         refreshUiState()
     }
 
@@ -84,12 +86,20 @@ class SettingsViewModel(
         threshold: String,
         roomNo: String,
         buildingNo: String,
-        areaNo: String
+        areaNo: String,
+        authToken: String
     ) {
-        userPreferencesManager.setLowBalanceThreshold(threshold.toDoubleOrNull() ?: 10.0)
+        userPreferencesManager.setLowBalanceThreshold((threshold.toDoubleOrNull() ?: 10.0).coerceAtLeast(0.0))
         userPreferencesManager.setRoomInfo(
-            RoomInfo(roomNo, buildingNo, areaNo)
+            RoomInfo(roomNo.trim(), buildingNo.trim(), areaNo.trim())
         )
+        if (authToken.isNotBlank()) userPreferencesManager.setAuthToken(authToken)
+        _roomNoFlow.value = roomNo.trim()
+        refreshUiState()
+    }
+
+    fun clearAuthToken() {
+        userPreferencesManager.setAuthToken("")
         refreshUiState()
     }
 }

@@ -1,13 +1,10 @@
 package com.kirawii.thunderswufe;
 
 import android.app.Application;
-import android.content.Context;
 import android.util.Log;
-import androidx.annotation.NonNull;
 import androidx.room.Room;
 import androidx.work.BackoffPolicy;
 import androidx.work.Constraints;
-import androidx.work.Configuration;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.PeriodicWorkRequest;
@@ -20,7 +17,7 @@ import com.kirawii.thunderswufe.work.ElectricityPredictionWorker;
 
 import java.util.concurrent.TimeUnit;
 
-public class ThunderApplication extends Application implements Configuration.Provider {
+public class ThunderApplication extends Application {
     private static volatile ThunderApplication instance;
     public static ThunderApplication getInstance() {
         if (instance == null) {
@@ -49,16 +46,14 @@ public class ThunderApplication extends Application implements Configuration.Pro
                 ElectricityDatabase.class,
                 ElectricityDatabase.DATABASE_NAME
         )
-        .fallbackToDestructiveMigration()
+        .addMigrations(ElectricityDatabase.MIGRATION_3_4)
         .build();
         Log.d("ThunderApplication", "数据库已初始化");
 
         userPreferencesManager = new UserPreferencesManager(getApplicationContext());
         Log.d("ThunderApplication", "UserPreferencesManager 已初始化");
 
-        Log.d("ThunderApplication", "Initializing UserPreferencesManager defaults (blocking)...");
-        userPreferencesManager.initializeDefaultsIfNeeded(); // Java: 同步调用
-        Log.d("ThunderApplication", "UserPreferencesManager defaults initialization COMPLETED (blocking).");
+        userPreferencesManager.initializeDefaultsIfNeeded();
 
         electricityPredictor = new ElectricityPredictor(getApplicationContext());
         Log.d("ThunderApplication", "ElectricityPredictor 已初始化");
@@ -131,11 +126,4 @@ public class ThunderApplication extends Application implements Configuration.Pro
         Log.i("ThunderApplication", "周期性电量预测任务已调度，ID: " + workRequest.getId());
     }
 
-    @NonNull
-    @Override
-    public Configuration getWorkManagerConfiguration() {
-        return new Configuration.Builder()
-                .setMinimumLoggingLevel(Log.INFO)
-                .build();
-    }
 }

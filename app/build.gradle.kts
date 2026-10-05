@@ -2,8 +2,12 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.ksp)
 }
+
+// Keep generated artifacts in one root-level directory. This also avoids stale
+// module-local lint caches being picked up by IDE and antivirus indexers.
+layout.buildDirectory.set(rootProject.layout.buildDirectory.dir("app"))
 
 android {
     namespace = "com.kirawii.thunderswufe"
@@ -18,10 +22,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "BASE_URL", "\"https://rhfw.swufe.edu.cn/\"")
-        ndk {
-            // 只保留必要的 ABI
-            abiFilters += listOf("arm64-v8a")
-        }
     }
 
     buildTypes {
@@ -49,86 +49,66 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-        mlModelBinding = true
     }
-    androidResources {
-        noCompress += "tflite"
-    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 
 dependencies {
 
     // AndroidX 核心依赖
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.activity:activity-compose:1.8.2")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
     
     // Compose 相关依赖 - 只包含必要组件
-    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
 
     // 网络请求 - 只包含必要组件
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0") {
+    implementation(libs.retrofit.core)
+    implementation(libs.retrofit.gson) {
         exclude(group = "com.google.code.gson", module = "gson")
     }
-    implementation("com.google.code.gson:gson:2.10.1")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation(libs.gson)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
 
     // 图表库 - 只包含必要组件
-    implementation("com.patrykandpatrick.vico:compose:1.13.1") {
+    implementation(libs.vico.compose) {
         exclude(group = "androidx.compose.foundation")
         exclude(group = "androidx.compose.animation")
     }
-    implementation("com.patrykandpatrick.vico:compose-m3:1.13.1") {
+    implementation(libs.vico.compose.m3) {
         exclude(group = "androidx.compose.material3")
     }
 
     // 数据持久化
-    implementation("androidx.datastore:datastore-preferences:1.0.0") {
-        exclude(group = "androidx.lifecycle")
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-    }
+    implementation(libs.androidx.datastore.preferences)
 
-    // Room数据库 - 只包含必要组件
-    implementation("androidx.room:room-runtime:2.6.1") {
-        exclude(group = "androidx.sqlite")
-    }
-    implementation("androidx.room:room-ktx:2.6.1") {
-        exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-core")
-    }
-    ksp("androidx.room:room-compiler:2.6.1")
+    // Room 数据库
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
     
     // 协程 - 只包含 Android 版本
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation(libs.kotlinx.coroutines.android)
 
-    // WorkManager - 只包含必要组件
-    implementation("androidx.work:work-runtime-ktx:2.9.0") {
-        exclude(group = "androidx.lifecycle")
-        exclude(group = "androidx.startup")
-    }
-
-    // TensorFlow Lite - 必要的核心组件
-    implementation("org.tensorflow:tensorflow-lite:2.14.0") {
-        exclude(group = "org.tensorflow", module = "tensorflow-lite-gpu")
-    }
-    implementation("org.tensorflow:tensorflow-lite-api:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.3") {
-        exclude(group = "org.tensorflow", module = "tensorflow-lite-metadata")
-        exclude(group = "com.google.android.gms", module = "play-services-tasks")
-    }
+    implementation(libs.androidx.work.runtime.ktx)
 
     // 调试依赖
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    testImplementation("junit:junit:4.13.2")
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation(libs.junit)
+    testImplementation(libs.json)
 }
