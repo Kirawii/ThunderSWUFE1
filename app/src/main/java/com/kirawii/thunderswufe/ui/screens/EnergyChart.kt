@@ -100,7 +100,10 @@ fun EnergyChart(values: List<Double>, labels: List<String>, title: String,
 fun EnergyChips(options: List<String>, selected: String, onSelect: (String) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { option ->
-            FilterChip(selected = option == selected, onClick = { onSelect(option) }, label = { Text(option) })
+            FilterChip(selected = option == selected, onClick = { onSelect(option) }, label = { Text(option) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer))
         }
     }
 }
